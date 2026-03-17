@@ -1,5 +1,0 @@
-{
-  "name": "knowledge-graph-network",
-  "description": "Automated knowledge graph network that builds and maintains distributed CLAUDE.md files, tracks activity via hooks, and self-evolves to eliminate blind spots.",
-  "version": "1.0.0"
-}

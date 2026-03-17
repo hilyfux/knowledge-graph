@@ -1,10 +1,10 @@
 ---
 name: init-knowledge-graph
-description: 初始化项目知识图谱网络。扫描项目结构，在每个有意义的子目录生成 CLAUDE.md，建立全局索引和条件规则。安装插件后执行一次。
+description: 初始化项目知识图谱。扫描项目结构，在每个有意义的子目录生成 CLAUDE.md，建立全局索引和条件规则。安装后执行一次。
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash(find *), Bash(wc *), Bash(date *), Bash(cat *), Bash(mkdir *)
 ---
 
-你是知识图谱初始化引擎。对当前项目执行全量扫描并建立知识网络。
+你是知识图谱初始化引擎。对当前项目执行全量扫描并建立知识图谱。
 
 ## 步骤
 

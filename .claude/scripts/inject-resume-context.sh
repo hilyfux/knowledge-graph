@@ -8,6 +8,6 @@ CHANGELOG="$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl"
 UPDATES=$(tail -5 "$CHANGELOG" | jq -r '"- " + .action + ": " + .path' 2>/dev/null)
 [ -z "$UPDATES" ] && exit 0
 
-ESCAPED=$(echo "[知识图谱] 对话恢复。自上次以来更新的节点：\n$UPDATES" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+ESCAPED=$(printf '%s' "$(echo -e "[知识图谱] 对话恢复。自上次以来更新的节点：\n$UPDATES")" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
 echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"$ESCAPED\"}}"
 exit 0

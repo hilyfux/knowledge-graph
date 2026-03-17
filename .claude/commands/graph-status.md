@@ -1,6 +1,6 @@
 ---
 name: graph-status
-description: 查看知识图谱网络的当前状态：覆盖率、热力图、盲区、最近更新。
+description: 查看知识图谱的当前状态：覆盖率、热力图、盲区、最近更新。
 allowed-tools: Read, Glob, Grep, Bash(wc *), Bash(cat *), Bash(find *), Bash(tail *)
 ---
 
