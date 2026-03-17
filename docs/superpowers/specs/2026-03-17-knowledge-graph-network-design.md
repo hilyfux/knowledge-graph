@@ -321,6 +321,9 @@ CHANGELOG="$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl"
 EVENTS="$CLAUDE_PROJECT_DIR/.claude/graph-events.jsonl"
 CONTEXT=""
 
+# 清理残留锁文件（进化引擎中途失败时可能残留）
+rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
+
 # 报告上次进化更新
 if [ -f "$CHANGELOG" ] && [ -s "$CHANGELOG" ]; then
   UPDATES=$(tail -10 "$CHANGELOG" | jq -r '"- " + .action + ": " + .path + " (" + .reason + ")"' 2>/dev/null)
@@ -363,6 +366,7 @@ exit 0
 ```bash
 #!/bin/bash
 # inject-resume-context.sh
+[ -z "$CLAUDE_PROJECT_DIR" ] && exit 0
 CHANGELOG="$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl"
 [ ! -f "$CHANGELOG" ] || [ ! -s "$CHANGELOG" ] && exit 0
 
@@ -596,6 +600,12 @@ allowed-tools: Read, Glob, Grep, Bash(wc *), Bash(cat *), Bash(find *)
 - JSONL 追加（`>>`）在 POSIX 系统上对小写入是原子的
 - changelog 清空使用 `mv` + `rm` 而非 `>` 截断，避免读写冲突
 - 进化引擎使用锁文件 `.claude/.evolving` 防止并发执行
+
+### 锁文件残留恢复
+
+如果进化引擎中途失败，`.claude/.evolving` 锁文件可能残留，导致 PostToolUse 停止记录事件。恢复方式：
+- 手动删除：`rm .claude/.evolving`
+- 自动恢复：SessionStart(startup) hook 检测到锁文件存在时自动删除（下次新对话启动时）
 
 ---
 
