@@ -559,7 +559,7 @@ touch .claude/graph-events-archive.jsonl
 ---
 name: graph-status
 description: 查看知识图谱网络的当前状态：覆盖率、热力图、盲区、最近更新。
-allowed-tools: Read, Glob, Grep, Bash(wc *), Bash(cat *), Bash(find *)
+allowed-tools: Read, Glob, Grep, Bash(wc *), Bash(cat *), Bash(find *), Bash(tail *)
 ---
 
 分析当前项目的知识图谱状态并输出报告。
@@ -679,7 +679,9 @@ knowledge-graph-network/
 ├── hooks/
 │   └── hooks.json
 ├── skills/
-│   └── init-knowledge-graph/
+│   ├── init-knowledge-graph/
+│   │   └── SKILL.md
+│   └── graph-status/
 │       └── SKILL.md
 ├── scripts/
 │   ├── track-activity.sh
