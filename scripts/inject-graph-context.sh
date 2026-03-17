@@ -30,7 +30,7 @@ if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
 fi
 
 if [ -n "$CONTEXT" ]; then
-  ESCAPED=$(echo -e "$CONTEXT" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+  ESCAPED=$(printf '%s' "$(echo -e "$CONTEXT")" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
   echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"$ESCAPED\"}}"
 fi
 
