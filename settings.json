@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(jq *)",
+      "Bash(date *)",
+      "Bash(wc *)",
+      "Bash(tail *)",
+      "Bash(cat *)",
+      "Bash(mkdir *)",
+      "Bash(find *)",
+      "Bash(rm */.claude/.evolving)",
+      "Bash(mv *)"
+    ]
+  }
+}
