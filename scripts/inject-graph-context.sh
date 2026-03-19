@@ -1,64 +1,42 @@
 #!/bin/bash
 # inject-graph-context.sh — SessionStart(startup|clear)
-# Injects rich context: changelog + hot areas + git summary + health warnings
+# Injects context: changelog + hot areas + git summary + health warnings
+# Uses cached analysis if available, avoids expensive scans.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/guard.sh"
 
 CHANGELOG="$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl"
 EVENTS="$CLAUDE_PROJECT_DIR/.claude/graph-events.jsonl"
+ANALYSIS="$CLAUDE_PROJECT_DIR/.claude/graph-analysis.json"
 CONTEXT=""
 
-# Clean up stale lockfile from failed evolution
+# Clean up stale lockfile
 rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
-# 1. Report evolution updates since last session
+# 1. Evolution updates
 if [ -f "$CHANGELOG" ] && [ -s "$CHANGELOG" ]; then
   UPDATES=$(tail -10 "$CHANGELOG" | jq -r '"- " + .action + ": " + .path + " (" + .reason + ")"' 2>/dev/null)
   if [ -n "$UPDATES" ]; then
-    CONTEXT="[知识图谱更新报告] 上次会话后自动更新了以下知识节点：\n$UPDATES"
+    CONTEXT="[知识图谱更新] \n$UPDATES"
     mv "$CHANGELOG" "${CHANGELOG}.reported" 2>/dev/null
   fi
 fi
 
-# 2. Report hot areas from events
-if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
+# 2. Hot areas (from cached analysis or events)
+if [ -f "$ANALYSIS" ]; then
+  HOT=$(jq -r '.dirs[:3][] | "  \(.w)次写入 \(.dir)"' "$ANALYSIS" 2>/dev/null)
+  BROKEN=$(jq -r '.broken_refs[]' "$ANALYSIS" 2>/dev/null)
+  [ -n "$HOT" ] && CONTEXT="$CONTEXT\n[活跃区域]\n$HOT"
+  [ -n "$BROKEN" ] && CONTEXT="$CONTEXT\n[断裂引用]\n$BROKEN"
+elif [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
   HOT=$(tail -500 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null | xargs -I{} dirname {} 2>/dev/null | sort | uniq -c | sort -rn | head -3)
-  if [ -n "$HOT" ]; then
-    CONTEXT="$CONTEXT\n[活跃区域] 近期高频变更目录：\n$HOT"
-  fi
+  [ -n "$HOT" ] && CONTEXT="$CONTEXT\n[活跃区域]\n$HOT"
 fi
 
-# 3. Git recent activity summary (last 5 commits, quick context)
+# 3. Git summary (fast: single git log call)
 if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir &>/dev/null; then
-  GIT_SUMMARY=$(git -C "$CLAUDE_PROJECT_DIR" log --oneline -5 2>/dev/null)
-  if [ -n "$GIT_SUMMARY" ]; then
-    CONTEXT="$CONTEXT\n[最近提交]\n$GIT_SUMMARY"
-  fi
-
-  # Co-change hint: files that changed together in last 10 commits
-  COCHANGE=$(git -C "$CLAUDE_PROJECT_DIR" log --pretty=format: --name-only -10 2>/dev/null | sort | uniq -c | sort -rn | head -5 | grep -v '^\s*$')
-  if [ -n "$COCHANGE" ]; then
-    CONTEXT="$CONTEXT\n[高频变更文件]\n$COCHANGE"
-  fi
-fi
-
-# 4. Knowledge health warnings
-WARNINGS=""
-# Check for broken @ references in CLAUDE.md files
-for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
-  REFS=$(grep -oP '@\S+CLAUDE\.md' "$cmd_file" 2>/dev/null)
-  for ref in $REFS; do
-    REF_PATH="${ref#@}"
-    FULL_PATH="$(dirname "$cmd_file")/$REF_PATH"
-    if [ ! -f "$FULL_PATH" ]; then
-      REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
-      WARNINGS="$WARNINGS\n- 断裂引用: $REL 中 $ref 指向不存在的文件"
-    fi
-  done
-done
-
-if [ -n "$WARNINGS" ]; then
-  CONTEXT="$CONTEXT\n[知识健康警告]$WARNINGS"
+  GIT=$(git -C "$CLAUDE_PROJECT_DIR" log --oneline -5 2>/dev/null)
+  [ -n "$GIT" ] && CONTEXT="$CONTEXT\n[最近提交]\n$GIT"
 fi
 
 if [ -n "$CONTEXT" ]; then
