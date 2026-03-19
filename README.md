@@ -1,4 +1,168 @@
-# 知识图谱 (Knowledge Graph)
+# Knowledge Graph
+
+[English](#english) | [中文](#中文)
+
+---
+
+<a id="english"></a>
+
+Claude Code plugin — fully automatic knowledge graph. Compensates for AI's weaknesses: cross-session amnesia, unknown project constraints, invisible module dependencies.
+
+**Requirements**: `jq` (required), `git` (optional, enhances dependency analysis)
+
+## What It Does
+
+1. **Initial scan** — bash pre-scans project structure & dependencies, LLM generates CLAUDE.md behavior instructions
+2. **Real-time tracking** — single jq call records file changes/reads/searches/failures (< 30ms)
+3. **Tiered evolution** — bash pre-computes analysis at session end → auto-selects light/standard mode → LLM only makes decisions
+4. **Smart injection** — session start injects summary, post-compaction restores working context, subagents inherit prohibitions
+
+## Install
+
+```bash
+# User scope (available in all projects)
+claude plugin install --scope user https://github.com/hilyfux/knowledge-graph
+
+# Project scope
+claude plugin install --scope project https://github.com/hilyfux/knowledge-graph
+
+# Local development
+claude --plugin-dir /path/to/knowledge-graph
+```
+
+## Usage
+
+```bash
+cd your-project
+claude
+# Auto-prompts initialization on first use, or manually:
+> /knowledge-graph:init-knowledge-graph
+# Check graph status:
+> /knowledge-graph:graph-status
+```
+
+Fully automatic after init — hooks track activity, evolution engine runs on its own.
+
+## Design Principles
+
+### Bash Computes, LLM Decides
+
+| Phase | Bash does | LLM does |
+|-------|-----------|----------|
+| Init | scan-project.sh scans dirs/deps/git | Generates CLAUDE.md content |
+| Tracking | Single jq call writes events | — |
+| Evolution | pre-analyze.sh aggregates stats | Reads analysis, decides what to write |
+| Injection | Scripts assemble context | — |
+
+### Three-Space Isolation
+
+| Space | Location | Access |
+|-------|----------|--------|
+| Install | `~/.claude/plugins/.../knowledge-graph/` | Read-only |
+| Workspace | `${CLAUDE_PROJECT_DIR}` | Skill scans |
+| Data | `${CLAUDE_PROJECT_DIR}/.claude/` | Hooks read/write |
+
+### Misoperation Protection
+
+- All operations silently exit under `$HOME` or `/`
+- `/init` counts files and asks for confirmation before scanning
+- Repeated `/init` is idempotent (append only, never overwrite)
+- Plugin uninstall/upgrade does not affect project data
+
+## Workflow
+
+```
+In session  → PostToolUse        Single jq records w:new/w:edit/r/s events
+            → InstructionsLoaded  Records CLAUDE.md loading
+            → PostToolUseFailure  Records failures + error summary
+            → SubagentStart       Injects project prohibitions + failure patterns
+
+Compaction  → SessionStart(compact)  Restores active dirs + prohibitions + failures + git commits
+
+Session end → on-stop.sh          Guard + pre-analyze.sh pre-computation
+            → Evolution agent      Reads analysis JSON → tiered decisions → quality check → writes
+              Light (<15 events): blind spots + broken ref fixes
+              Standard (≥15):     + feedback loop + cross-module rules
+
+Next session → SessionStart(startup) Injects updates + heatmap + git + health warnings
+                                     Auto-suggests init on first use
+```
+
+## Event Format
+
+```jsonl
+{"e":"w:new","p":"src/auth/handler.ts","t":1711...}
+{"e":"w:edit","p":"src/auth/handler.ts","t":1711...}
+{"e":"r","p":"src/auth/handler.ts","t":1711...}
+{"e":"s","p":"src/","q":"AuthToken","t":1711...}
+{"e":"i","p":"src/auth/CLAUDE.md","t":1711...}
+{"e":"f","tool":"Bash","err":"permission denied","t":1711...}
+```
+
+## CLAUDE.md Structure
+
+```markdown
+# Module Name
+## Prohibitions
+- Specific & actionable (evidence-backed, never vague "be careful")
+## When Changing
+- Changed X → see @../api/CLAUDE.md
+## Conventions
+- How this module works
+```
+
+Principles: instructions not docs / @ references = graph edges / extreme compression / no evidence = no rule
+
+## Plugin Structure
+
+```
+knowledge-graph/
+├── .claude-plugin/plugin.json
+├── hooks/hooks.json
+├── scripts/
+│   ├── guard.sh                  ← Guard + json_escape + emit_hook_context
+│   ├── scan-project.sh           ← Init pre-scan (dirs/deps/git)
+│   ├── pre-analyze.sh            ← Evolution pre-computation (aggregation/blind spots/stale/broken)
+│   ├── track-activity.sh         ← PostToolUse (single jq)
+│   ├── track-instructions.sh     ← InstructionsLoaded (single jq)
+│   ├── track-failure.sh          ← PostToolUseFailure (single jq)
+│   ├── inject-graph-context.sh   ← SessionStart(startup|clear)
+│   ├── inject-resume-context.sh  ← SessionStart(resume)
+│   ├── on-compact.sh             ← SessionStart(compact) context recovery
+│   ├── inject-subagent-context.sh ← SubagentStart prohibition injection
+│   └── on-stop.sh                ← Stop guard + trigger pre-analysis
+└── skills/
+    ├── init-knowledge-graph/SKILL.md
+    └── graph-status/SKILL.md
+```
+
+## Team Usage
+
+```bash
+# Commit knowledge nodes (share team knowledge)
+git add CLAUDE.md **/CLAUDE.md .claude/rules/
+
+# .gitignore runtime data
+echo '.claude/graph-events.jsonl' >> .gitignore
+echo '.claude/graph-events-archive.jsonl' >> .gitignore
+echo '.claude/graph-changelog.jsonl' >> .gitignore
+echo '.claude/.evolving' >> .gitignore
+echo '.claude/graph-analysis.json' >> .gitignore
+echo '.claude/graph-scan.json' >> .gitignore
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/knowledge-graph:init-knowledge-graph` | Initialize knowledge graph (bash pre-scan + LLM generation) |
+| `/knowledge-graph:graph-status` | Coverage / health / heatmap / blind spots / failure patterns |
+
+---
+
+<a id="中文"></a>
+
+# 知识图谱
 
 Claude Code 插件 — 全自动知识图谱。弥补 AI 的短板：跨会话失忆、不知道项目禁忌、看不到模块依赖。
 
