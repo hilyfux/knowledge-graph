@@ -1,0 +1,86 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|Read|Glob|Grep",
+        "hooks": [{
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/track-activity.sh\"",
+          "timeout": 2
+        }]
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "hooks": [{
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/track-instructions.sh\"",
+          "timeout": 2
+        }]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [{
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/track-failure.sh\"",
+          "timeout": 2
+        }]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|clear",
+        "hooks": [{
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-graph-context.sh\"",
+          "timeout": 5
+        }]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [{
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/on-compact.sh\"",
+          "timeout": 5
+        }]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [{
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-resume-context.sh\"",
+          "timeout": 5
+        }]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": "*",
+        "hooks": [{
+          "type": "command",
+          "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/inject-subagent-context.sh\"",
+          "timeout": 3
+        }]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/on-stop.sh\"",
+            "timeout": 5
+          },
+          {
+            "type": "agent",
+            "prompt": "你是知识图谱进化引擎。\n\n第零步：检查 $CLAUDE_PROJECT_DIR 是否存在且不等于 $HOME 且不等于 /，不满足则直接结束。创建锁文件 .claude/.evolving 防止递归。所有工作完成后删除此锁文件。\n\n第一步：读取 .claude/graph-events.jsonl。如果文件不存在或少于5行，删除锁文件后直接结束。\n\n第二步：三维盲区分析\n- 统计每个目录的：写入次数(e=w)、读取次数(e=r)、知识加载次数(e=i)、失败次数(e=f)\n- 高写入+高读取+零知识加载 = 关键盲区（优先处理）\n- 高失败 = 问题区域（CLAUDE.md 需增强约束）\n\n第三步：执行进化（每次最多处理3个文件）\n1) 为关键盲区目录生成 CLAUDE.md，结构必须是：\n   ## 禁忌\\n## 改动时\\n## 约定\n2) 检查已有 CLAUDE.md 是否因文件变更而过时，用 Edit 工具最小化更新\n3) 确保 @ 引用反映真实依赖关系\n\n第四步：记录变更\n1) 每个创建或更新的 CLAUDE.md，追加一条到 .claude/graph-changelog.jsonl：\n   {\"action\":\"created|updated\",\"path\":\"相对路径\",\"reason\":\"原因\",\"ts\":时间戳}\n2) 将已处理事件追加到 .claude/graph-events-archive.jsonl\n3) 清空 graph-events.jsonl\n4) 归档文件超过 5000 行时只保留最后 2000 行\n5) 删除锁文件 .claude/.evolving",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}
