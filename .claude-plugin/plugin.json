@@ -8,6 +8,5 @@
   "repository": "https://github.com/hilyfux/knowledge-graph",
   "license": "MIT",
   "keywords": ["knowledge-graph", "claude-md", "auto-evolution"],
-  "skills": "./skills/",
-  "hooks": "./hooks/hooks.json"
+  "skills": "./skills/"
 }
