@@ -25,10 +25,10 @@ EXISTING=$(find . -name "CLAUDE.md" -not -path '*/.git/*' -not -path '*/node_mod
 # --- Dependencies: extract cross-directory imports ---
 DEPS=""
 for mod in $MODULES; do
-  # JS/TS imports
-  IMPORTS=$(grep -rhoP "(?:import\s+.*from\s+['\"]|require\(['\"])(\.[^'\"]+)" "$mod" 2>/dev/null | grep -oP '\.[^"'"'"']+' | sort -u)
+  # JS/TS imports: extract relative paths from import/require statements
+  IMPORTS=$(grep -rhoE "(from\s+['\"]\.\.?/[^'\"]+|require\(['\"]\.\.?/[^'\"]+)" "$mod" 2>/dev/null | grep -oE '\.\.?/[^"'"'"')+]+' | sort -u)
   # Python imports (relative)
-  IMPORTS="$IMPORTS"$'\n'$(grep -rhoP "from\s+(\.\S+)" "$mod" 2>/dev/null | grep -oP '\.\S+' | sort -u)
+  IMPORTS="$IMPORTS"$'\n'$(grep -rhoE "from\s+\.\S+" "$mod" 2>/dev/null | grep -oE '\.\S+' | sort -u)
 
   for imp in $IMPORTS; do
     # Resolve relative path to directory
@@ -55,18 +55,24 @@ if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null; then
 
   # Commit message convention detection
   RECENT_MSGS=$(git log --pretty=format:'%s' -20 2>/dev/null)
-  if echo "$RECENT_MSGS" | grep -qP '^(feat|fix|chore|docs|refactor|test|perf)(\(.+\))?:'; then
+  if echo "$RECENT_MSGS" | grep -qE '^(feat|fix|chore|docs|refactor|test|perf)(\(.+\))?:'; then
     CONVENTIONS="conventional-commits"
   fi
 fi
 
 # --- Project type detection ---
 PROJECT_TYPE="unknown"
-[ -f "package.json" ] && PROJECT_TYPE="js/ts"
-[ -f "Cargo.toml" ] && PROJECT_TYPE="rust"
-[ -f "go.mod" ] && PROJECT_TYPE="go"
-[ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "requirements.txt" ] && PROJECT_TYPE="python"
-[ -f "pom.xml" ] || [ -f "build.gradle" ] && PROJECT_TYPE="java"
+if [ -f "package.json" ] || [ -f "tsconfig.json" ] || find . -maxdepth 4 \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" \) -not -path "*/node_modules/*" 2>/dev/null | head -1 | grep -q .; then
+  PROJECT_TYPE="js/ts"
+elif [ -f "Cargo.toml" ]; then
+  PROJECT_TYPE="rust"
+elif [ -f "go.mod" ]; then
+  PROJECT_TYPE="go"
+elif [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "requirements.txt" ]; then
+  PROJECT_TYPE="python"
+elif [ -f "pom.xml" ] || [ -f "build.gradle" ]; then
+  PROJECT_TYPE="java"
+fi
 
 # --- File counts ---
 TOTAL_FILES=$(find . -type f -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/build/*' -not -path '*/.claude/*' 2>/dev/null | wc -l | tr -d ' ')

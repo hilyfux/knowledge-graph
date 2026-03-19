@@ -49,7 +49,7 @@ done
 BROKEN_JSON="[]"
 BROKEN_LIST=""
 for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
-  for ref in $(grep -oP '@[^\s]+CLAUDE\.md' "$cmd_file" 2>/dev/null); do
+  for ref in $(grep -oE '@[^[:space:]]+CLAUDE\.md' "$cmd_file" 2>/dev/null); do
     FULL="$(dirname "$cmd_file")/${ref#@}"
     if [ ! -f "$FULL" ]; then
       REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
