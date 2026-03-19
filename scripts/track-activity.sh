@@ -17,29 +17,24 @@ case "$TOOL" in
   Write)
     PATH_VAL=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
     PATH_VAL="${PATH_VAL#$CLAUDE_PROJECT_DIR/}"
-    [ -n "$PATH_VAL" ] && echo "{\"e\":\"w:new\",\"p\":\"$PATH_VAL\",\"t\":$TS}" >> "$EVENTS"
+    [ -n "$PATH_VAL" ] && jq -n --arg e "w:new" --arg p "$PATH_VAL" --argjson t "$TS" '{e:$e,p:$p,t:$t}' >> "$EVENTS"
     ;;
   Edit)
     PATH_VAL=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
     PATH_VAL="${PATH_VAL#$CLAUDE_PROJECT_DIR/}"
-    [ -n "$PATH_VAL" ] && echo "{\"e\":\"w:edit\",\"p\":\"$PATH_VAL\",\"t\":$TS}" >> "$EVENTS"
+    [ -n "$PATH_VAL" ] && jq -n --arg e "w:edit" --arg p "$PATH_VAL" --argjson t "$TS" '{e:$e,p:$p,t:$t}' >> "$EVENTS"
     ;;
   Read)
     PATH_VAL=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
     PATH_VAL="${PATH_VAL#$CLAUDE_PROJECT_DIR/}"
-    [ -n "$PATH_VAL" ] && echo "{\"e\":\"r\",\"p\":\"$PATH_VAL\",\"t\":$TS}" >> "$EVENTS"
+    [ -n "$PATH_VAL" ] && jq -n --arg e "r" --arg p "$PATH_VAL" --argjson t "$TS" '{e:$e,p:$p,t:$t}' >> "$EVENTS"
     ;;
-  Glob)
+  Glob|Grep)
     SPATH=$(echo "$INPUT" | jq -r '.tool_input.path // empty')
     SPATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // empty')
     SPATH="${SPATH#$CLAUDE_PROJECT_DIR/}"
-    echo "{\"e\":\"s\",\"p\":\"$SPATH\",\"q\":\"$SPATTERN\",\"t\":$TS}" >> "$EVENTS"
-    ;;
-  Grep)
-    SPATH=$(echo "$INPUT" | jq -r '.tool_input.path // empty')
-    SPATTERN=$(echo "$INPUT" | jq -r '.tool_input.pattern // empty')
-    SPATH="${SPATH#$CLAUDE_PROJECT_DIR/}"
-    echo "{\"e\":\"s\",\"p\":\"$SPATH\",\"q\":\"$SPATTERN\",\"t\":$TS}" >> "$EVENTS"
+    [ -z "$SPATH" ] && SPATH="."
+    jq -n --arg e "s" --arg p "$SPATH" --arg q "$SPATTERN" --argjson t "$TS" '{e:$e,p:$p,q:$q,t:$t}' >> "$EVENTS"
     ;;
 esac
 

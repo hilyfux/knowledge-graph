@@ -16,14 +16,14 @@ if [ -f "$CHANGELOG" ] && [ -s "$CHANGELOG" ]; then
   UPDATES=$(tail -10 "$CHANGELOG" | jq -r '"- " + .action + ": " + .path + " (" + .reason + ")"' 2>/dev/null)
   if [ -n "$UPDATES" ]; then
     CONTEXT="[知识图谱更新报告] 上次会话后自动更新了以下知识节点：\n$UPDATES"
+    # Mark as reported, keep for resume/status (cleared by next evolution cycle)
     mv "$CHANGELOG" "${CHANGELOG}.reported" 2>/dev/null
-    rm -f "${CHANGELOG}.reported" 2>/dev/null
   fi
 fi
 
 # Report hot areas
 if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
-  HOT=$(tail -500 "$EVENTS" | jq -r 'select(.e=="w") | .p' 2>/dev/null | xargs -I{} dirname {} 2>/dev/null | sort | uniq -c | sort -rn | head -3)
+  HOT=$(tail -500 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null | xargs -I{} dirname {} 2>/dev/null | sort | uniq -c | sort -rn | head -3)
   if [ -n "$HOT" ]; then
     CONTEXT="$CONTEXT\n[活跃区域] 近期高频变更目录：\n$HOT"
   fi

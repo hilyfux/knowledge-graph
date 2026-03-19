@@ -4,9 +4,18 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/guard.sh"
 
 CHANGELOG="$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl"
-[ ! -f "$CHANGELOG" ] || [ ! -s "$CHANGELOG" ] && exit 0
+REPORTED="$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl.reported"
 
-UPDATES=$(tail -5 "$CHANGELOG" | jq -r '"- " + .action + ": " + .path' 2>/dev/null)
+# Check both current and reported changelog (startup hook moves it to .reported)
+if [ -f "$CHANGELOG" ] && [ -s "$CHANGELOG" ]; then
+  SRC="$CHANGELOG"
+elif [ -f "$REPORTED" ] && [ -s "$REPORTED" ]; then
+  SRC="$REPORTED"
+else
+  exit 0
+fi
+
+UPDATES=$(tail -5 "$SRC" | jq -r '"- " + .action + ": " + .path' 2>/dev/null)
 [ -z "$UPDATES" ] && exit 0
 
 ESCAPED=$(printf '%s' "$(echo -e "[知识图谱] 对话恢复。自上次以来更新的节点：\n$UPDATES")" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")

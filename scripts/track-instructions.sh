@@ -11,6 +11,6 @@ FILES=$(echo "$INPUT" | jq -r '(.loaded_files // [])[], (.file_path // empty)' 2
 for f in $FILES; do
   [ -z "$f" ] && continue
   REL="${f#$CLAUDE_PROJECT_DIR/}"
-  echo "{\"e\":\"i\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS"
+  jq -n --arg e "i" --arg p "$REL" --argjson t "$TS" '{e:$e,p:$p,t:$t}' >> "$EVENTS"
 done
 exit 0
