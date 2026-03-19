@@ -30,6 +30,27 @@ Claude Code plugin — fully automatic knowledge graph. Compensates for AI's wea
 claude --plugin-dir /path/to/knowledge-graph
 ```
 
+## Uninstall
+
+```bash
+# Uninstall plugin
+/plugin uninstall knowledge-graph@hilyfux-knowledge-graph
+
+# Remove marketplace
+/plugin marketplace remove hilyfux-knowledge-graph
+```
+
+## Plugin Management
+
+```bash
+/plugin                          # Interactive UI (install/uninstall/enable/disable)
+/plugin marketplace list         # List configured marketplaces
+/plugin marketplace update hilyfux-knowledge-graph  # Update to latest version
+/plugin disable knowledge-graph@hilyfux-knowledge-graph  # Disable without uninstalling
+/plugin enable knowledge-graph@hilyfux-knowledge-graph   # Re-enable
+/reload-plugins                  # Reload after changes
+```
+
 ## Usage
 
 ```bash
@@ -186,6 +207,27 @@ Claude Code 插件 — 全自动知识图谱。弥补 AI 的短板：跨会话�
 
 # 或者：本地测试
 claude --plugin-dir /path/to/knowledge-graph
+```
+
+## 卸载
+
+```bash
+# 卸载插件
+/plugin uninstall knowledge-graph@hilyfux-knowledge-graph
+
+# 移除 marketplace
+/plugin marketplace remove hilyfux-knowledge-graph
+```
+
+## 插件管理
+
+```bash
+/plugin                          # 交互式界面（安装/卸载/启用/禁用）
+/plugin marketplace list         # 查看已配置的 marketplace
+/plugin marketplace update hilyfux-knowledge-graph  # 更新到最新版本
+/plugin disable knowledge-graph@hilyfux-knowledge-graph  # 禁用（不卸载）
+/plugin enable knowledge-graph@hilyfux-knowledge-graph   # 重新启用
+/reload-plugins                  # 修改后重新加载
 ```
 
 ## 使用

@@ -1,13 +1,17 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "knowledge-graph",
+  "description": "Automatic knowledge graph plugin for Claude Code",
   "owner": {
     "name": "hilyfux"
   },
   "plugins": [
     {
       "name": "knowledge-graph",
-      "source": ".",
-      "description": "Automatic knowledge graph for Claude Code — tracks activity, detects blind spots, evolves CLAUDE.md"
+      "description": "Automatic knowledge graph — tracks activity, detects blind spots, evolves CLAUDE.md",
+      "category": "productivity",
+      "source": "./",
+      "homepage": "https://github.com/hilyfux/knowledge-graph"
     }
   ]
 }
