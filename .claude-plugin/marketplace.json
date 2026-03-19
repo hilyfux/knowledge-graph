@@ -10,7 +10,7 @@
       "name": "knowledge-graph",
       "description": "Automatic knowledge graph — tracks activity, detects blind spots, evolves CLAUDE.md",
       "category": "productivity",
-      "source": "./",
+      "source": "./plugins/knowledge-graph",
       "homepage": "https://github.com/hilyfux/knowledge-graph"
     }
   ]
