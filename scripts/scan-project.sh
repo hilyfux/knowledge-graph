@@ -23,24 +23,35 @@ MODULES=$(find . -type f \
 EXISTING=$(find . -name "CLAUDE.md" -not -path '*/.git/*' -not -path '*/node_modules/*' 2>/dev/null | sed 's|^\./||' | sort)
 
 # --- Dependencies: extract cross-directory imports ---
+# Strategy: find all relative import paths, resolve to target directories
 DEPS=""
 for mod in $MODULES; do
-  # JS/TS imports: extract relative paths from import/require statements
+  # JS/TS: extract relative paths from import/require
   IMPORTS=$(grep -rhoE "(from\s+['\"]\.\.?/[^'\"]+|require\(['\"]\.\.?/[^'\"]+)" "$mod" 2>/dev/null | grep -oE '\.\.?/[^"'"'"')+]+' | sort -u)
-  # Python imports (relative)
-  IMPORTS="$IMPORTS"$'\n'$(grep -rhoE "from\s+\.\S+" "$mod" 2>/dev/null | grep -oE '\.\S+' | sort -u)
+  # Python: relative imports
+  PY_IMPORTS=$(grep -rhoE "from\s+\.\S+" "$mod" 2>/dev/null | grep -oE '\.\S+' | sort -u)
 
   for imp in $IMPORTS; do
-    # Resolve relative path to directory
-    TARGET=$(cd "$mod" 2>/dev/null && realpath --relative-to="$CLAUDE_PROJECT_DIR" "$imp" 2>/dev/null | xargs dirname 2>/dev/null)
-    [ -z "$TARGET" ] && continue
-    [ "$TARGET" = "$mod" ] && continue  # skip self-references
-    # Check target is a known module
+    # Resolve: if mod=src/api and imp=../auth → target=src/auth
+    TARGET=$(cd "$CLAUDE_PROJECT_DIR/$mod" 2>/dev/null && cd "$imp" 2>/dev/null && pwd) || continue
+    TARGET="${TARGET#$CLAUDE_PROJECT_DIR/}"
+    # Only keep the directory part
+    [ -d "$CLAUDE_PROJECT_DIR/$TARGET" ] || TARGET=$(dirname "$TARGET")
+    [ "$TARGET" = "$mod" ] && continue
+    echo "$MODULES" | grep -q "^$TARGET$" && DEPS="$DEPS{\"from\":\"$mod\",\"to\":\"$TARGET\"},"
+  done
+
+  # Python relative imports use dots: from .utils → same dir, from ..models → parent
+  for imp in $PY_IMPORTS; do
+    DOTS=$(echo "$imp" | grep -oE '^\\.+' | wc -c)
+    DOTS=$((DOTS - 1))
+    TARGET="$mod"
+    for i in $(seq 1 $DOTS); do TARGET=$(dirname "$TARGET"); done
+    [ "$TARGET" = "$mod" ] && continue
     echo "$MODULES" | grep -q "^$TARGET$" && DEPS="$DEPS{\"from\":\"$mod\",\"to\":\"$TARGET\"},"
   done
 done
-DEPS_JSON="[${DEPS%,}]"
-[ -z "$DEPS" ] && DEPS_JSON="[]"
+DEPS_JSON=$(echo "[${DEPS%,}]" | jq -c 'unique' 2>/dev/null || echo "[]")
 
 # --- Git signals ---
 COCHANGE_JSON="[]"
