@@ -13,6 +13,14 @@ CONTEXT=""
 # Clean up stale lockfile
 rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
+# Auto-suggest init if project has no CLAUDE.md (first-time detection)
+if ! find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" -not -path "*/.git/*" -not -path "*/node_modules/*" -maxdepth 3 2>/dev/null | grep -q .; then
+  CONTEXT="[知识图谱] 此项目尚未初始化知识图谱。执行 /knowledge-graph:init-knowledge-graph 开始。"
+  ESCAPED=$(printf '%s' "$CONTEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
+  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"$ESCAPED\"}}"
+  exit 0
+fi
+
 # 1. Evolution updates
 if [ -f "$CHANGELOG" ] && [ -s "$CHANGELOG" ]; then
   UPDATES=$(tail -10 "$CHANGELOG" | jq -r '"- " + .action + ": " + .path + " (" + .reason + ")"' 2>/dev/null)
