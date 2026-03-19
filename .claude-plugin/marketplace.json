@@ -1,0 +1,13 @@
+{
+  "name": "knowledge-graph",
+  "owner": {
+    "name": "hilyfux"
+  },
+  "plugins": [
+    {
+      "name": "knowledge-graph",
+      "source": ".",
+      "description": "Automatic knowledge graph for Claude Code — tracks activity, detects blind spots, evolves CLAUDE.md"
+    }
+  ]
+}

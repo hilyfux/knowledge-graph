@@ -20,13 +20,13 @@ Claude Code plugin — fully automatic knowledge graph. Compensates for AI's wea
 ## Install
 
 ```bash
-# User scope (available in all projects)
-claude plugin install --scope user https://github.com/hilyfux/knowledge-graph
+# Step 1: Add marketplace
+/plugin marketplace add hilyfux/knowledge-graph
 
-# Project scope
-claude plugin install --scope project https://github.com/hilyfux/knowledge-graph
+# Step 2: Install plugin (via /plugin UI or command)
+/plugin install knowledge-graph@hilyfux-knowledge-graph
 
-# Local development
+# Alternative: local development
 claude --plugin-dir /path/to/knowledge-graph
 ```
 
@@ -178,13 +178,13 @@ Claude Code 插件 — 全自动知识图谱。弥补 AI 的短板：跨会话�
 ## 安装
 
 ```bash
-# user 级别（所有项目可用）
-claude plugin install --scope user https://github.com/hilyfux/knowledge-graph
+# 第一步：添加 marketplace
+/plugin marketplace add hilyfux/knowledge-graph
 
-# 项目级别
-claude plugin install --scope project https://github.com/hilyfux/knowledge-graph
+# 第二步：安装插件（通过 /plugin 界面或命令）
+/plugin install knowledge-graph@hilyfux-knowledge-graph
 
-# 本地测试
+# 或者：本地测试
 claude --plugin-dir /path/to/knowledge-graph
 ```
 
