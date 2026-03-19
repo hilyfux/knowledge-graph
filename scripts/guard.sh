@@ -10,3 +10,13 @@
 
 # Ensure project data space exists (auto-create on first use)
 mkdir -p "$CLAUDE_PROJECT_DIR/.claude"
+
+# JSON escape helper — uses jq (already a dependency), no python3 needed
+# Usage: json_escape "string with special chars"
+json_escape() { printf '%s' "$1" | jq -Rs .; }
+
+# Emit SessionStart hook output. Usage: emit_context "escaped JSON string content"
+emit_hook_context() {
+  local event="${2:-SessionStart}"
+  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"$event\",\"additionalContext\":$1}}"
+}

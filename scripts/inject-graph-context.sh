@@ -1,7 +1,6 @@
 #!/bin/bash
 # inject-graph-context.sh — SessionStart(startup|clear)
 # Injects context: changelog + hot areas + git summary + health warnings
-# Uses cached analysis if available, avoids expensive scans.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/guard.sh"
 
@@ -13,24 +12,24 @@ CONTEXT=""
 # Clean up stale lockfile
 rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
-# Auto-suggest init if project has no CLAUDE.md (first-time detection)
-if ! find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" -not -path "*/.git/*" -not -path "*/node_modules/*" -maxdepth 3 2>/dev/null | grep -q .; then
-  CONTEXT="[知识图谱] 此项目尚未初始化知识图谱。执行 /knowledge-graph:init-knowledge-graph 开始。"
-  ESCAPED=$(printf '%s' "$CONTEXT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"$ESCAPED\"}}"
-  exit 0
+# Auto-suggest init (fast check: no changelog = never initialized)
+if [ ! -f "$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl" ] && [ ! -f "$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl.reported" ]; then
+  if ! find "$CLAUDE_PROJECT_DIR" -maxdepth 3 -name "CLAUDE.md" -not -path "*/.git/*" 2>/dev/null | grep -q .; then
+    emit_hook_context "$(json_escape '[知识图谱] 此项目尚未初始化。执行 /knowledge-graph:init-knowledge-graph 开始。')"
+    exit 0
+  fi
 fi
 
 # 1. Evolution updates
 if [ -f "$CHANGELOG" ] && [ -s "$CHANGELOG" ]; then
   UPDATES=$(tail -10 "$CHANGELOG" | jq -r '"- " + .action + ": " + .path + " (" + .reason + ")"' 2>/dev/null)
   if [ -n "$UPDATES" ]; then
-    CONTEXT="[知识图谱更新] \n$UPDATES"
+    CONTEXT="[知识图谱更新]\n$UPDATES"
     mv "$CHANGELOG" "${CHANGELOG}.reported" 2>/dev/null
   fi
 fi
 
-# 2. Hot areas (from cached analysis or events)
+# 2. Hot areas + health (from cache or events)
 if [ -f "$ANALYSIS" ]; then
   HOT=$(jq -r '.dirs[:3][] | "  \(.w)次写入 \(.dir)"' "$ANALYSIS" 2>/dev/null)
   BROKEN=$(jq -r '.broken_refs[]' "$ANALYSIS" 2>/dev/null)
@@ -41,15 +40,11 @@ elif [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
   [ -n "$HOT" ] && CONTEXT="$CONTEXT\n[活跃区域]\n$HOT"
 fi
 
-# 3. Git summary (fast: single git log call)
+# 3. Git summary
 if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir &>/dev/null; then
   GIT=$(git -C "$CLAUDE_PROJECT_DIR" log --oneline -5 2>/dev/null)
   [ -n "$GIT" ] && CONTEXT="$CONTEXT\n[最近提交]\n$GIT"
 fi
 
-if [ -n "$CONTEXT" ]; then
-  ESCAPED=$(printf '%s' "$(echo -e "$CONTEXT")" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"$ESCAPED\"}}"
-fi
-
+[ -n "$CONTEXT" ] && emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")"
 exit 0

@@ -20,9 +20,6 @@ if [ -f "$ANALYSIS" ]; then
   [ -n "$ERRORS" ] && CONTEXT="$CONTEXT\n[常见失败]\n$ERRORS"
 fi
 
-if [ -n "$CONTEXT" ]; then
-  ESCAPED=$(printf '%s' "$(echo -e "$CONTEXT")" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
-  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SubagentStart\",\"additionalContext\":\"$ESCAPED\"}}"
-fi
+[ -n "$CONTEXT" ] && emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")" "SubagentStart"
 
 exit 0

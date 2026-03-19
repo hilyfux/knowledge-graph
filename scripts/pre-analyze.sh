@@ -10,7 +10,8 @@ OUTPUT="$CLAUDE_PROJECT_DIR/.claude/graph-analysis.json"
 [ ! -f "$EVENTS" ] && exit 1
 
 # --- Core analysis: single jq call for events → dirs + blind_spots + loaded ---
-CORE=$(cat "$EVENTS" | jq -s '
+# Filter valid JSON lines first (skip malformed events)
+CORE=$(jq -c '.' "$EVENTS" 2>/dev/null | jq -s '
   . as $all |
   # Directory stats
   [.[] | select(.p != null and .p != "")] |

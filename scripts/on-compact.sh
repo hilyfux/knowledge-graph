@@ -36,6 +36,5 @@ if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-di
   [ -n "$COMMITS" ] && CONTEXT="$CONTEXT\n\n本次会话提交：\n$COMMITS"
 fi
 
-ESCAPED=$(printf '%s' "$(echo -e "$CONTEXT")" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read())[1:-1])")
-echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"$ESCAPED\"}}"
+emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")"
 exit 0
