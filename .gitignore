@@ -1,0 +1,4 @@
+# Runtime data (generated in target projects, not in plugin repo)
+*.jsonl
+.claude/.evolving
+.claude/graph-analysis.json
