@@ -1,73 +1,46 @@
 ---
 name: graph-status
-description: 查看知识图谱的当前状态：覆盖率、热力图、盲区、知识健康度、最近更新。
+description: 查看知识图谱状态：覆盖率、健康度、热力图、盲区。
 ---
 
-分析当前项目的知识图谱状态并输出报告。
+知识图谱状态报告。
 
-## 工作空间守卫
-- 检查当前工作目录：不能是 $HOME，不能是 /
-- 如果无效 → 告知用户"请在项目目录中执行此命令"，停止
+## 守卫
+- 当前目录 = $HOME 或 / → 告知用户「请在项目目录中执行」，停止
+- 无任何 CLAUDE.md → 告知用户先执行 /knowledge-graph:init-knowledge-graph，停止
 
-## 初始化检查
-- 用 Glob 查找 `**/CLAUDE.md`
-- 如果未找到任何文件 → 告知用户"当前项目尚未初始化知识图谱，请先执行 /knowledge-graph:init-knowledge-graph"，停止
+## 数据采集
+1. Glob `**/CLAUDE.md` — 节点列表
+2. Glob `.claude/rules/*.md` — 规则列表
+3. 识别模块目录（3+ 文件，排除 .git/node_modules/dist/build/.claude），对比 CLAUDE.md 覆盖
+4. 读取 `.claude/graph-events.jsonl` 最近 500 行，按目录聚合：
+   - w:new / w:edit / r / s / i / f，失败按 err 分组
+5. 读取 `.claude/graph-changelog.jsonl`（或 .reported）最近 10 条
+6. 健康检查：@ 引用是否存在（断裂）/ CLAUDE.md 是否过时 / 禁忌段落是否为空
 
-## 步骤
-
-1. 用 Glob 统计所有 CLAUDE.md 文件数量和位置（`**/CLAUDE.md`）
-2. 用 Glob 统计所有 `.claude/rules/*.md` 文件数量
-3. 用 Glob 统计有 3+ 文件的目录，排除 .git/node_modules/dist/build/.claude，与已有 CLAUDE.md 对比找出盲区
-4. 读取 `.claude/graph-events.jsonl`（最近 500 行），统计各目录的：
-   - 写入次数（e 以 w 开头，包括 w:new 和 w:edit）
-   - 读取次数（e=r）
-   - 搜索次数（e=s）
-   - 加载次数（e=i）
-   - 失败次数（e=f），列出 top 失败原因（err 字段）
-5. 读取 `.claude/graph-changelog.jsonl`（或 .reported），列出最近 10 条更新记录
-6. 计算覆盖率 = 有 CLAUDE.md 的模块目录数 / 总模块目录数
-7. 知识健康度检查：
-   - 对每个 CLAUDE.md，检查 @ 引用是否指向存在的文件（断裂引用 = 过时）
-   - 检查 CLAUDE.md 修改时间 vs 目录下最近文件变更时间（长期不更新 = 可能过时）
-   - 检查是否有「禁忌」段落为空的 CLAUDE.md（空壳节点）
-
-## 输出格式
+## 输出
 
 ```
 ## 知识图谱状态报告
 
 ### 覆盖率
-X/Y 个模块已覆盖 (Z%)
+X/Y 模块 (Z%)
 
-### 知识节点
-- path/to/CLAUDE.md (N 条禁忌, M 条 @ 引用)
-- ...
+### 健康度
+- 过时节点: X 个（活跃目录但 CLAUDE.md 长期未更新）
+- 断裂引用: Y 个
+- 空壳节点: Z 个（禁忌段落为空）
 
-### 条件规则
-- .claude/rules/xxx.md (paths: ...)
-- ...
-
-### 盲区（无 CLAUDE.md 的活跃目录）
-- path/to/uncovered/dir/ (写入: N, 读取: M)
-- ...
+### 盲区
+- dir/ (写入:N, 读取:M)
 
 ### 热力图 Top 5
-| 目录 | 新建 | 修改 | 读取 | 搜索 | 加载 | 失败 |
-|------|------|------|------|------|------|------|
-| ... | ... | ... | ... | ... | ... | ... |
-
-### 知识健康度
-- 过时节点：X 个（CLAUDE.md 长期未更新但目录活跃）
-- 断裂引用：Y 个（@ 指向不存在的文件）
-- 空壳节点：Z 个（有 CLAUDE.md 但禁忌段落为空）
-- 被忽视规则提示：列出 top 3 被加载但仍然出现违反的禁忌
+| 目录 | 新建 | 修改 | 读取 | 失败 |
+|------|------|------|------|------|
 
 ### 失败模式 Top 3
-| 目录 | 工具 | 错误 | 次数 |
-|------|------|------|------|
-| ... | ... | ... | ... |
+| 目录 | 错误 | 次数 |
 
-### 最近进化记录
+### 最近进化
 - [时间] action: path (reason)
-- ...
 ```
