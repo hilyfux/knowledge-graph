@@ -109,7 +109,7 @@ find . -type f -not -path '*/.git/*' -not -path '*/node_modules/*' \
 
 <step id="2" name="确认">
 读取 `.claude/graph-scan.json`，输出：
-「发现 {project_type} 项目，共 {total_files} 个文件，{total_dirs} 个模块。
+「当前目录：{project_root}，发现 {project_type} 项目，共 {total_files} 个文件，{total_dirs} 个模块。
   已有 {existing_claude_md 数量} 个 CLAUDE.md。即将新增/补充 {差值} 个。继续？(y/n)」
 
 等待用户确认。若拒绝，停止并提示「已取消，未做任何修改」。
@@ -157,7 +157,7 @@ touch .claude/graph-events.jsonl .claude/graph-changelog.jsonl .claude/graph-eve
 {"action":"initialized","path":".","reason":"首次初始化","timestamp":{unix_time}}
 ```
 若已初始化过则写 `re-initialized`。
-删除临时文件 `.claude/graph-scan.json`。
+删除临时文件 `.claude/graph-scan.json`（若步骤 1 使用了备用手动统计则此文件不存在，跳过删除）。
 </step>
 
 <step id="6" name="报告">
