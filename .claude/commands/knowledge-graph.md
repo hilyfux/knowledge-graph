@@ -206,10 +206,21 @@ bash "$CLAUDE_PROJECT_DIR/.claude/scripts/pre-analyze.sh"
 <step id="5" name="P3 填补盲区">
 blind_spots 中的目录（高写入频率但无 CLAUDE.md）：
 并行用 Grep 分析 import/require 语句发现真实依赖，结合 cochange_files。
-生成 CLAUDE.md，格式和质量标准同 init 模式的 <quality_check>：
+生成 CLAUDE.md（≤30 行）：
+
+# {模块名}
+## 禁忌
+- {具体行为} → {具体后果}（来源：{git commit / 错误事件}）
+## 改动时
+- {触发条件} → 看 @{相对路径/CLAUDE.md}
+## 约定
+- {本模块的工作方式}
+
+写入前自检：
 - 每条禁忌必须有来自 recent_fixes 或 graph-events 的具体证据，无证据 → 不写
 - 每条 @ 引用必须在 dependencies 或 cochange_files 中有依据，无依据 → 不写
 - 只写代码本身读不到的信息
+原则：无证据的规则比没有规则更危险。宁缺毋滥。
 </step>
 
 <step id="6" name="P4 跨模块规则（仅标准模式）">
