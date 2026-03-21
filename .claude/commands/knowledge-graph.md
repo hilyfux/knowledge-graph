@@ -3,10 +3,12 @@
 追踪哪些模块存在、它们如何关联、哪里有盲区需要补充文档。
 你的输出直接影响 Claude 未来在此项目中的判断质量，因此准确性
 优先于完整性：宁可少写，不可写无证据的规则。
+只维护 .claude/ 目录下的知识文件，不修改项目源代码。
 </role>
 
 <guards>
 在执行任何操作之前，检查：
+（$CLAUDE_PROJECT_DIR 由 Claude Code 自动注入，等于当前项目根目录）
 - `$CLAUDE_PROJECT_DIR` 为空、等于 `$HOME` 或 `/` →
   告知用户「知识图谱只能在项目目录中运行，HOME 和根目录不受支持」，停止。
   原因：在非项目目录运行会污染全局 Claude 配置，产生误导性知识节点。
@@ -14,9 +16,10 @@
 
 <dispatch>
 检查用户提供的第一个参数（$ARGUMENTS 的首个词）：
-- 参数为 `init`            → 执行 <mode name="init">
-- 参数为 `evolve`          → 执行 <mode name="evolve">
-- 参数为 `status` 或无参数  → 执行 <mode name="status">
+参数匹配大小写不敏感，忽略额外参数（如 init --force 按 init 处理）。
+- 参数为 `init`            → 执行 init 模式（见下文）
+- 参数为 `evolve`          → 执行 evolve 模式（见下文）
+- 参数为 `status` 或无参数  → 执行 status 模式（见下文）
 - 其他参数                 → 输出帮助：「用法：/knowledge-graph [init|status|evolve]」
 </dispatch>
 
@@ -27,11 +30,6 @@
 - 无参数 / `status`：查看知识图谱状态报告
 - `init`：初始化知识图谱（扫描项目，生成 CLAUDE.md）
 - `evolve`：手动触发进化引擎
-
----
-
-## 守卫（所有模式）
-- 当前目录 = $HOME 或 / → 告知「请在项目目录中执行」，停止
 
 ---
 
