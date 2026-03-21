@@ -38,7 +38,7 @@
 <data_paths>
   cache:     .claude/graph-analysis.json
   events:    .claude/graph-events.jsonl
-  changelog: .claude/graph-changelog.jsonl（或 .reported 后缀）
+  changelog: .claude/graph-changelog.jsonl（优先）或 .claude/graph-changelog.jsonl.reported（fallback）
   rules:     .claude/rules/*.md
 </data_paths>
 
@@ -48,7 +48,7 @@
 2. Glob `**/CLAUDE.md`（排除 .git、node_modules）
 3. 读取 `graph-events.jsonl` 最后 500 行
 4. Glob `.claude/rules/*.md`
-5. 读取 `graph-changelog.jsonl`（或 .reported）最后 10 行
+5. 优先读取 `graph-changelog.jsonl`；若不存在则读取 `graph-changelog.jsonl.reported`；取最后 10 行
 
 原因：并行读取避免串行等待，status 模式必须快速完成。
 </collection>
@@ -56,11 +56,11 @@
 <analysis>
 根据采集结果计算：
 - 覆盖率 = 有 CLAUDE.md 的目录数 / 总模块目录数（≥3 个文件的目录）
-- 空壳节点 = CLAUDE.md 存在但「## 禁忌」段落为空
+- 空壳节点 = CLAUDE.md 存在但「## 禁忌」标题下无任何列表项（即段落内容缺失或只有空行）
 - 盲区 = graph-analysis.json 的 blind_spots 字段；
          缓存不存在时：写入次数 > 2 且无对应 CLAUDE.md 的目录
-- 过时 = graph-analysis.json 的 stale 字段
-- 断裂引用 = graph-analysis.json 的 broken_refs 字段
+- 过时 = graph-analysis.json 的 stale 字段；缓存不存在时显示 N/A
+- 断裂引用 = graph-analysis.json 的 broken_refs 字段；缓存不存在时显示 N/A
 </analysis>
 
 <output_format>
@@ -75,7 +75,7 @@
 过时: {N} | 断裂引用: {N} | 空壳: {N}
 
 ### 盲区（高活动未覆盖目录）
-{若无盲区：「✓ 无盲区」}
+{若无盲区，只输出一行：「✓ 无盲区」，不输出列表。若有盲区，只输出列表，不输出「✓ 无盲区」}
 - {dir}/ （写入:{N}次，读取:{N}次）
 
 ### 热力图 Top 5
