@@ -76,6 +76,12 @@ HOOKS_JSON=$(cat << 'ENDJSON'
       "matcher": "*",
       "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/inject-subagent-context.sh\"", "timeout": 3}]
     }
+  ],
+  "Stop": [
+    {
+      "matcher": "*",
+      "hooks": [{"type": "command", "command": "bash -c 'F=\"$CLAUDE_PROJECT_DIR/.claude/graph-events.jsonl\"; [ -f \"$F\" ] && COUNT=$(wc -l < \"$F\") && [ \"$COUNT\" -ge 20 ] && echo \"[kg] 💡 已积累 $COUNT 条活动记录，可运行 /knowledge-graph update 更新知识图谱\" || true'", "timeout": 2}]
+    }
   ]
 }
 ENDJSON
@@ -103,7 +109,8 @@ else
         .hooks.PostToolUseFailure = ((.hooks.PostToolUseFailure // []) + $h.PostToolUseFailure) |
         .hooks.InstructionsLoaded = ((.hooks.InstructionsLoaded // []) + $h.InstructionsLoaded) |
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       + $h.SessionStart) |
-        .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      + $h.SubagentStart)
+        .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      + $h.SubagentStart) |
+        .hooks.Stop               = ((.hooks.Stop // [])               + $h.Stop)
       ' > "$SETTINGS"
   fi
 fi
