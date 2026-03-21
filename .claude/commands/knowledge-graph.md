@@ -33,38 +33,62 @@
 
 ---
 
-## status 模式（默认）
+<mode name="status">
 
-### 数据采集
-**优先读缓存** `.claude/graph-analysis.json`（包含 dirs/blind_spots/broken_refs/stale）。
-缓存不存在则手动采集：
-1. Glob `**/CLAUDE.md`
-2. 读取 `.claude/graph-events.jsonl` 最近 500 行，按目录聚合 w/r/i/f
+<data_paths>
+  cache:     .claude/graph-analysis.json
+  events:    .claude/graph-events.jsonl
+  changelog: .claude/graph-changelog.jsonl（或 .reported 后缀）
+  rules:     .claude/rules/*.md
+</data_paths>
 
-**补充采集**（无论是否有缓存）：
-- Glob `.claude/rules/*.md`
-- 覆盖率 = 有 CLAUDE.md 的模块数 / 总模块数
-- `.claude/graph-changelog.jsonl`（或 .reported）最近 10 条
+<collection>
+并行执行以下所有读取（不要顺序执行，同时发出工具调用）：
+1. 读取 `graph-analysis.json`（若存在）
+2. Glob `**/CLAUDE.md`（排除 .git、node_modules）
+3. 读取 `graph-events.jsonl` 最后 500 行
+4. Glob `.claude/rules/*.md`
+5. 读取 `graph-changelog.jsonl`（或 .reported）最后 10 行
 
-### 输出
-```
+原因：并行读取避免串行等待，status 模式必须快速完成。
+</collection>
+
+<analysis>
+根据采集结果计算：
+- 覆盖率 = 有 CLAUDE.md 的目录数 / 总模块目录数（≥3 个文件的目录）
+- 空壳节点 = CLAUDE.md 存在但「## 禁忌」段落为空
+- 盲区 = graph-analysis.json 的 blind_spots 字段；
+         缓存不存在时：写入次数 > 2 且无对应 CLAUDE.md 的目录
+- 过时 = graph-analysis.json 的 stale 字段
+- 断裂引用 = graph-analysis.json 的 broken_refs 字段
+</analysis>
+
+<output_format>
+严格按以下格式输出，不添加额外解释，不省略任何段落：
+
 ## 知识图谱状态
 
 ### 覆盖率
-X/Y 模块 (Z%)
+{有 CLAUDE.md 的模块数}/{总模块数} ({百分比}%)
 
 ### 健康度
-过时: X | 断裂引用: Y | 空壳: Z
+过时: {N} | 断裂引用: {N} | 空壳: {N}
 
-### 盲区
-- dir/ (写入:N, 读取:M)
+### 盲区（高活动未覆盖目录）
+{若无盲区：「✓ 无盲区」}
+- {dir}/ （写入:{N}次，读取:{N}次）
 
 ### 热力图 Top 5
 | 目录 | 新建 | 修改 | 读取 | 失败 |
+|------|------|------|------|------|
+| {dir} | {w_new} | {w_edit} | {r} | {f} |
 
 ### 最近进化
-- [时间] action: path (reason)
-```
+{若无记录：「尚未进化，运行 /knowledge-graph evolve 开始」}
+- [{timestamp}] {action}: {path} ({reason})
+</output_format>
+
+</mode>
 
 ---
 
