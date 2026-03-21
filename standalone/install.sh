@@ -80,7 +80,7 @@ HOOKS_JSON=$(cat << 'ENDJSON'
   "Stop": [
     {
       "matcher": "*",
-      "hooks": [{"type": "command", "command": "bash -c 'F=\"$CLAUDE_PROJECT_DIR/.claude/graph-events.jsonl\"; [ -f \"$F\" ] && COUNT=$(wc -l < \"$F\") && [ \"$COUNT\" -ge 20 ] && echo \"[kg] 💡 已积累 $COUNT 条活动记录，可运行 /knowledge-graph update 更新知识图谱\" || true'", "timeout": 2}]
+      "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/on-stop.sh\"", "timeout": 2}]
     }
   ]
 }

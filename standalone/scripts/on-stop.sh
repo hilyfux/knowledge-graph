@@ -1,8 +1,6 @@
 #!/bin/bash
-# run-evolution.sh — Stop hook: prints reminder when enough events accumulated.
+# on-stop.sh — Stop hook: prints reminder when enough events accumulated.
 # No background processes, no LLM calls. User triggers /knowledge-graph update manually.
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-source "$SCRIPT_DIR/guard.sh"
 
 EVENTS="$CLAUDE_PROJECT_DIR/.claude/graph-events.jsonl"
 [ ! -f "$EVENTS" ] && exit 0
