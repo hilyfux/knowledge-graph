@@ -18,9 +18,9 @@
 检查用户提供的第一个参数（$ARGUMENTS 的首个词）：
 参数匹配大小写不敏感，忽略额外参数（如 init --force 按 init 处理）。
 - 参数为 `init`            → 执行 init 模式（见下文）
-- 参数为 `evolve`          → 执行 evolve 模式（见下文）
+- 参数为 `update`          → 执行 update 模式（见下文）
 - 参数为 `status` 或无参数  → 执行 status 模式（见下文）
-- 其他参数                 → 输出帮助：「用法：/knowledge-graph [init|status|evolve]」
+- 其他参数                 → 输出帮助：「用法：/knowledge-graph [init|status|update]」
 </dispatch>
 
 # 知识图谱
@@ -28,8 +28,8 @@
 根据参数执行不同操作：
 
 - 无参数 / `status`：查看知识图谱状态报告
-- `init`：初始化知识图谱（扫描项目，生成 CLAUDE.md）
-- `evolve`：手动触发进化引擎
+- `init`：首次初始化（全量扫描项目，生成所有 CLAUDE.md）
+- `update`：增量更新（检测新模块 + 基于活动记录刷新现有节点）
 
 ---
 
@@ -83,8 +83,8 @@
 |------|------|------|------|------|
 | {dir} | {w_new} | {w_edit} | {r} | {f} |
 
-### 最近进化
-{若无记录：「尚未进化，运行 /knowledge-graph evolve 开始」}
+### 最近更新
+{若无记录：「尚未更新，运行 /knowledge-graph update 开始」}
 - [{timestamp}] {action}: {path} ({reason})
 </output_format>
 
@@ -168,72 +168,81 @@ touch .claude/graph-events.jsonl .claude/graph-changelog.jsonl .claude/graph-eve
 
 ---
 
-<mode name="evolve">
+<mode name="update">
+<!-- 增量更新：两件事并行处理——扫描新模块 + 基于活动记录刷新现有节点 -->
 
-<guards>
-检查前置条件（任一不满足则停止）：
-- `.claude/graph-events.jsonl` 不存在或行数 < 5 →
-  告知「活动数据不足（需要至少 5 次工具调用记录）。继续使用项目后再运行。」
-  原因：数据不足时进化引擎会产生无意义的更新，浪费时间。
-</guards>
+<step id="1" name="扫描新模块">
+并行执行：
+1. Glob `**/*`（只取目录，排除 .git、node_modules、dist、build、.claude）
+2. Glob `**/CLAUDE.md`（已有知识节点）
 
-<step id="1" name="预分析">
-运行预分析脚本生成结构化数据（纯 bash，无 LLM）：
-```bash
-bash "$CLAUDE_PROJECT_DIR/.claude/scripts/pre-analyze.sh"
-```
-然后读取 `.claude/graph-analysis.json`。
-若脚本失败，直接读取 `.claude/graph-events.jsonl` 自行分析（跳过读取 graph-analysis.json）。
+找出「含 ≥3 个文件但尚无 CLAUDE.md」的目录 → 新模块列表。
+若新模块列表为空，输出「✓ 无新模块」，跳过步骤 2-3。
 </step>
 
-<step id="2" name="选择执行模式">
-根据 event_count 字段：
-- 轻量（< 15 events）：只执行 P2 + P3，最多处理 2 个文件
-- 标准（≥ 15 events）：执行 P1 → P2 → P3 → P4，最多处理 5 个文件
+<step id="2" name="确认新模块">
+输出：「发现 {N} 个新模块：\n{列表}。\n为它们生成 CLAUDE.md？(y/n)」
+若拒绝，跳过步骤 3。
 </step>
 
-<step id="3" name="P1 反馈回路（仅标准模式）">
-读取 loaded_knowledge 中每个已加载的 CLAUDE.md，提取「## 禁忌」段落。
-对比 dirs 中该目录的 f（失败）事件：禁忌所描述的行为是否仍在发生？
-是 → 用 Edit 重写该禁忌，使其更具体可执行。
-</step>
+<step id="3" name="为新模块生成 CLAUDE.md">
+对每个新模块，并行读取关键文件（最多 3 个：index/main/README）以理解模块职责。
 
-<step id="4" name="P2 修复断裂引用和过时节点">
-- broken_refs 中的 @ 引用目标不存在 → 删除该行（用 Edit）
-- stale 列表中的 CLAUDE.md（目录有大量新文件变动）→ 重新读取目录关键文件，用 Edit 刷新内容
-</step>
-
-<step id="5" name="P3 填补盲区">
-blind_spots 中的目录（高写入频率但无 CLAUDE.md）：
-并行用 Grep 分析 import/require 语句发现真实依赖，结合 cochange_files。
 生成 CLAUDE.md（≤30 行）：
 
 # {模块名}
 ## 禁忌
-- {具体行为} → {具体后果}（来源：{git commit / 错误事件}）
+- {具体行为} → {具体后果}（来源：{git commit / 代码分析}）
 ## 改动时
 - {触发条件} → 看 @{相对路径/CLAUDE.md}
 ## 约定
 - {本模块的工作方式}
 
 写入前自检：
-- 每条禁忌必须有来自 recent_fixes 或 graph-events 的具体证据，无证据 → 不写
-- 每条 @ 引用必须在 dependencies 或 cochange_files 中有依据，无依据 → 不写
+- 每条禁忌必须有代码分析或 git 历史的具体证据，无证据 → 不写
+- 每条 @ 引用的目标文件必须存在，不存在 → 不写
 - 只写代码本身读不到的信息
 原则：无证据的规则比没有规则更危险。宁缺毋滥。
 </step>
 
-<step id="6" name="P4 跨模块规则（仅标准模式）">
-多个目录出现相同 top_err → 生成 `.claude/rules/{rule-name}.md`，带 `paths:` frontmatter。
-recent_fixes 中反复出现的问题 → 同上。
-幂等：只补充不存在的规则。
+<step id="4" name="基于事件更新现有节点">
+检查 `.claude/graph-events.jsonl` 行数：
+- 不存在或 < 5 → 输出「活动数据不足，跳过事件分析」，直接进入收尾
+- ≥ 5 → 继续：
+
+运行预分析脚本（纯 bash，无 LLM）：
+```bash
+bash "$CLAUDE_PROJECT_DIR/.claude/scripts/pre-analyze.sh"
+```
+然后读取 `.claude/graph-analysis.json`。
+若脚本失败，直接读取 `graph-events.jsonl` 自行分析。
+
+根据 event_count 选择：
+- 轻量（< 15）：执行 P2 + P3，最多处理 2 个文件
+- 标准（≥ 15）：执行 P1 → P2 → P3 → P4，最多处理 5 个文件
+
+**P1 反馈回路（仅标准）**
+读取 loaded_knowledge 中每个 CLAUDE.md 的「## 禁忌」，对比该目录的失败事件。
+禁忌所描述的行为仍在发生 → 用 Edit 重写使其更具体可执行。
+
+**P2 修复**
+- broken_refs 中 @ 引用目标不存在 → 删除该行
+- stale 列表中的 CLAUDE.md → 重新读取目录关键文件，用 Edit 刷新
+
+**P3 事件盲区**
+blind_spots 中的目录（高写入但无 CLAUDE.md，步骤 1-3 未处理的）：
+并行用 Grep 分析 import/require 发现真实依赖，结合 cochange_files，生成 CLAUDE.md（同上质量标准）。
+
+**P4 跨模块规则（仅标准）**
+多个目录相同 top_err → `.claude/rules/{name}.md`，带 `paths:` frontmatter。幂等。
 </step>
 
-<step id="7" name="收尾">
+<step id="5" name="收尾">
 1. 变更追加到 `.claude/graph-changelog.jsonl`（每条一行 JSON）
 2. 事件追加到 `.claude/graph-events-archive.jsonl`，然后清空 `graph-events.jsonl`
 3. 若 archive 超过 5000 行，保留最后 2000 行
 4. 删除 `.claude/graph-analysis.json`（临时缓存）
+5. 输出：「更新完成：新增 {N} 个模块 / 修复 {N} 个节点 / 新增 {N} 条规则」
 </step>
 
 </mode>
