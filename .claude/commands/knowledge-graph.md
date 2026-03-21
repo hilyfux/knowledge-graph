@@ -168,31 +168,61 @@ touch .claude/graph-events.jsonl .claude/graph-changelog.jsonl .claude/graph-eve
 
 ---
 
-## evolve 模式
+<mode name="evolve">
 
-### 守卫
-- `.claude/.evolving` 存在且不超过 10 分钟 → 告知「进化进行中」，停止
-- `.claude/graph-events.jsonl` 行数 < 5 → 告知「活动数据不足」，停止
+<guards>
+检查前置条件（任一不满足则停止）：
+- `.claude/graph-events.jsonl` 不存在或行数 < 5 →
+  告知「活动数据不足（需要至少 5 次工具调用记录）。继续使用项目后再运行。」
+  原因：数据不足时进化引擎会产生无意义的更新，浪费时间。
+</guards>
 
-### 执行
+<step id="1" name="预分析">
+运行预分析脚本生成结构化数据（纯 bash，无 LLM）：
 ```bash
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/pre-analyze.sh"
 ```
-然后按进化引擎逻辑执行（见 `.claude/scripts/evolution-prompt.md` 完整规范）：
+然后读取 `.claude/graph-analysis.json`。
+若脚本失败，直接读取 `.claude/graph-events.jsonl` 自行分析（跳过读取 graph-analysis.json）。
+</step>
 
-1. `touch .claude/.evolving`
-2. 读取 `.claude/graph-analysis.json`
-3. 按 event_count 选择模式：
-   - **轻量**（< 15）：P2 + P3，最多 2 个文件
-   - **标准**（≥ 15）：P1-P4，最多 5 个文件
+<step id="2" name="选择执行模式">
+根据 event_count 字段：
+- 轻量（< 15 events）：只执行 P2 + P3，最多处理 2 个文件
+- 标准（≥ 15 events）：执行 P1 → P2 → P3 → P4，最多处理 5 个文件
+</step>
 
-**P1** 反馈回路：禁忌被违反 → 重写使其更清晰
-**P2** 修复 broken_refs、更新 stale
-**P3** 为 blind_spots 生成 CLAUDE.md
-**P4** 跨模块规则 → `.claude/rules/`
+<step id="3" name="P1 反馈回路（仅标准模式）">
+读取 loaded_knowledge 中每个已加载的 CLAUDE.md，提取「## 禁忌」段落。
+对比 dirs 中该目录的 f（失败）事件：禁忌所描述的行为是否仍在发生？
+是 → 用 Edit 重写该禁忌，使其更具体可执行。
+</step>
 
-### 收尾
-1. 变更追加到 `.claude/graph-changelog.jsonl`
-2. 事件归档，清空 `graph-events.jsonl`
-3. 删除 `.claude/graph-analysis.json`
-4. `rm -f .claude/.evolving`
+<step id="4" name="P2 修复断裂引用和过时节点">
+- broken_refs 中的 @ 引用目标不存在 → 删除该行（用 Edit）
+- stale 列表中的 CLAUDE.md（目录有大量新文件变动）→ 重新读取目录关键文件，用 Edit 刷新内容
+</step>
+
+<step id="5" name="P3 填补盲区">
+blind_spots 中的目录（高写入频率但无 CLAUDE.md）：
+并行用 Grep 分析 import/require 语句发现真实依赖，结合 cochange_files。
+生成 CLAUDE.md，格式和质量标准同 init 模式的 <quality_check>：
+- 每条禁忌必须有来自 recent_fixes 或 graph-events 的具体证据，无证据 → 不写
+- 每条 @ 引用必须在 dependencies 或 cochange_files 中有依据，无依据 → 不写
+- 只写代码本身读不到的信息
+</step>
+
+<step id="6" name="P4 跨模块规则（仅标准模式）">
+多个目录出现相同 top_err → 生成 `.claude/rules/{rule-name}.md`，带 `paths:` frontmatter。
+recent_fixes 中反复出现的问题 → 同上。
+幂等：只补充不存在的规则。
+</step>
+
+<step id="7" name="收尾">
+1. 变更追加到 `.claude/graph-changelog.jsonl`（每条一行 JSON）
+2. 事件追加到 `.claude/graph-events-archive.jsonl`，然后清空 `graph-events.jsonl`
+3. 若 archive 超过 5000 行，保留最后 2000 行
+4. 删除 `.claude/graph-analysis.json`（临时缓存）
+</step>
+
+</mode>
