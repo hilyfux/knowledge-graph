@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "knowledge-graph",
-      "description": "Automatic knowledge graph — tracks activity, detects blind spots, evolves CLAUDE.md",
+      "description": "Automatic knowledge graph — tracks activity, detects blind spots, evolves CLAUDE.md. ⚠️ Project-level only (--scope project). Do not install at user level.",
       "category": "productivity",
       "source": "./plugins/knowledge-graph",
       "homepage": "https://github.com/hilyfux/knowledge-graph"

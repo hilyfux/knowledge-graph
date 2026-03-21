@@ -2,6 +2,14 @@
 # inject-graph-context.sh — SessionStart(startup|clear)
 # Injects context: changelog + hot areas + git summary + health warnings
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# User-level installation: emit visible warning before guard silences everything
+if [[ "$SCRIPT_DIR" == "$HOME/.claude/"* ]]; then
+  MSG='⚠️ [knowledge-graph] 检测到 user 级别安装，插件已禁用。\n原因：user 级别会对所有项目生效，可能导致后台持续消耗 token。\n请卸载后改为项目级别安装：在项目根目录执行 claude plugin add knowledge-graph'
+  echo "{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":$(printf '%s' "$MSG" | jq -Rs .)}}"
+  exit 0
+fi
+
 source "$SCRIPT_DIR/guard.sh"
 
 CHANGELOG="$CLAUDE_PROJECT_DIR/.claude/graph-changelog.jsonl"

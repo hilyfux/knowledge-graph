@@ -1,7 +1,7 @@
 {
   "name": "knowledge-graph",
-  "version": "1.0.2",
-  "description": "自动化知识图谱：追踪活动、检测盲区、生成和进化分布式 CLAUDE.md",
+  "version": "1.0.3",
+  "description": "自动化知识图谱：追踪活动、检测盲区、生成和进化分布式 CLAUDE.md。⚠️ 仅支持项目级别安装（--scope project），不支持 user 级别。",
   "author": {
     "name": "hilyfux"
   },

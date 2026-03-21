@@ -10,14 +10,12 @@ description: 初始化项目知识图谱。扫描项目结构，生成 CLAUDE.md
 - ~/Desktop、~/Downloads 等 → 下一步特别警告
 
 ## 1. 扫描（bash 执行，不消耗 LLM token）
-用 Bash 执行以下命令找到并运行扫描脚本：
+用 Bash 执行以下命令运行扫描脚本：
 ```bash
-SCAN=$(find ~/.claude/plugins -name "scan-project.sh" -path "*/knowledge-graph/*" 2>/dev/null | head -1)
-[ -z "$SCAN" ] && SCAN=$(find /tmp -name "scan-project.sh" -path "*/knowledge-graph/*" 2>/dev/null | head -1)
-[ -n "$SCAN" ] && bash "$SCAN" || echo "scan-project.sh not found"
+bash "${CLAUDE_PLUGIN_ROOT}/scripts/scan-project.sh"
 ```
 
-如果脚本不可用（提示 not found），手动统计：
+如果脚本不可用（提示错误），手动统计：
 `find . -type f -not -path '*/.git/*' -not -path '*/node_modules/*' -not -path '*/dist/*' -not -path '*/build/*' -not -path '*/.claude/*' | wc -l`
 然后在步骤 3 中自行用 Glob/Grep 完成扫描（跳过读取 graph-scan.json）。
 

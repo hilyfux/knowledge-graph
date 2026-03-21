@@ -76,19 +76,6 @@ HOOKS_JSON=$(cat << 'ENDJSON'
       "matcher": "*",
       "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/inject-subagent-context.sh\"", "timeout": 3}]
     }
-  ],
-  "Stop": [
-    {
-      "matcher": "*",
-      "hooks": [
-        {
-          "type": "agent",
-          "prompt": "知识图谱进化引擎。\n\n首先用 Bash 检查前置条件：\n```bash\nEVENTS=\"$CLAUDE_PROJECT_DIR/.claude/graph-events.jsonl\"\n[ ! -f \"$EVENTS\" ] && echo SKIP && exit 0\nLINE_COUNT=$(wc -l < \"$EVENTS\")\n[ \"$LINE_COUNT\" -lt 5 ] && echo SKIP && exit 0\necho PROCEED\n```\n输出 SKIP 则立即停止，不做任何操作。\n输出 PROCEED 则继续：运行 `bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/pre-analyze.sh\"` 生成分析缓存，然后读取 `$CLAUDE_PROJECT_DIR/.claude/commands/knowledge-graph.md` 中的 evolve 模式并严格按其指令执行进化。",
-          "allowedTools": ["Read", "Write", "Edit", "Glob", "Grep", "Bash(*)"],
-          "timeout": 120
-        }
-      ]
-    }
   ]
 }
 ENDJSON
@@ -104,7 +91,7 @@ else
   EXISTING=$(cat "$SETTINGS")
 
   # 检查是否已安装（避免重复）
-  if echo "$EXISTING" | jq -e '.hooks.Stop[0].hooks[]? | select(.type == "agent" and (.prompt | contains("知识图谱进化引擎")))' >/dev/null 2>&1; then
+  if echo "$EXISTING" | jq -e '.hooks.PostToolUse[]? | select(.hooks[]?.command | contains("track-activity.sh"))' >/dev/null 2>&1; then
     warn "检测到已安装的 hooks，跳过合并（如需重新安装请先删除 .claude/settings.json 中的 kg hooks）"
   else
     # 逐事件合并：已有的 hooks 数组 + 新的追加
@@ -116,8 +103,7 @@ else
         .hooks.PostToolUseFailure = ((.hooks.PostToolUseFailure // []) + $h.PostToolUseFailure) |
         .hooks.InstructionsLoaded = ((.hooks.InstructionsLoaded // []) + $h.InstructionsLoaded) |
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       + $h.SessionStart) |
-        .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      + $h.SubagentStart) |
-        .hooks.Stop               = ((.hooks.Stop // [])               + $h.Stop)
+        .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      + $h.SubagentStart)
       ' > "$SETTINGS"
   fi
 fi
