@@ -92,52 +92,79 @@
 
 ---
 
-## init 模式
+<mode name="init">
+<!-- 幂等：可重复执行，只追加缺失段落，不覆盖已有内容 -->
 
-### 1. 扫描（bash，不消耗 LLM token）
+<step id="1" name="扫描">
+用 Bash 运行扫描脚本（纯 bash，不消耗 LLM token）：
 ```bash
 bash "$CLAUDE_PROJECT_DIR/.claude/scripts/scan-project.sh"
 ```
-脚本不可用时手动统计文件数，步骤 3 自行用 Glob/Grep 扫描（跳过读取 graph-scan.json）。
+若脚本不可用（报错），用以下命令手动统计，并在步骤 3 自行用 Glob/Grep 扫描（跳过读取 graph-scan.json）：
+```bash
+find . -type f -not -path '*/.git/*' -not -path '*/node_modules/*' \
+  -not -path '*/dist/*' -not -path '*/build/*' -not -path '*/.claude/*' | wc -l
+```
+</step>
 
-### 2. 确认
+<step id="2" name="确认">
 读取 `.claude/graph-scan.json`，输出：
-「当前目录：{path}，{project_type} 项目，{total_files} 个文件，{total_dirs} 个模块」
-询问确认。拒绝则停止。
+「发现 {project_type} 项目，共 {total_files} 个文件，{total_dirs} 个模块。
+  已有 {existing_claude_md 数量} 个 CLAUDE.md。即将新增/补充 {差值} 个。继续？(y/n)」
 
-### 3. 生成 CLAUDE.md
+等待用户确认。若拒绝，停止并提示「已取消，未做任何修改」。
+</step>
+
+<step id="3" name="生成 CLAUDE.md">
 读取 graph-scan.json 的 modules、dependencies、cochange_files、recent_fixes、conventions。
-对每个 module（跳过 existing_claude_md 中已有的，除非追加缺失段落）：
-1. 读取该目录的几个关键文件，理解模块职责
-2. 用 dependencies 字段生成 @ 引用
-3. 用 cochange_files 补充隐式依赖的 @ 引用
-4. 用 recent_fixes 生成禁忌
-5. 生成 CLAUDE.md：
-```markdown
+
+对每个 module（existing_claude_md 中已有的跳过，除非缺少段落则追加）：
+
+并行读取该目录的关键文件（最多 3 个：index/main/README）以理解模块职责。
+
+生成 CLAUDE.md，格式严格如下（≤30 行）：
+
 # {模块名}
 ## 禁忌
-- {具体可执行，有证据}
+- {具体行为} → {具体后果}（来源：{git commit / 错误事件}）
 ## 改动时
-- {条件} → 看 @{相对路径}
+- {触发条件} → 看 @{相对路径/CLAUDE.md}
 ## 约定
-- {本模块工作方式}
-```
-约束：≤30 行 / 禁忌必须具体 / 已有 CLAUDE.md 只追加
+- {本模块的工作方式}
 
-根 CLAUDE.md：加入 conventions 发现的团队约定。
+<quality_check>
+写入前自检每条规则：
+1. 禁忌是否有来自 recent_fixes 或 graph-events 的具体证据？无证据 → 删除
+2. @ 引用的目标文件是否存在（在 dependencies 或 cochange_files 中可找到）？不存在 → 删除
+3. 内容是否只写了代码本身读不到的信息？只是重复代码注释 → 删除
 
-### 4. 生成 .claude/rules/（幂等：只补充）
-跨模块共性 → `paths:` frontmatter 条件规则
+原则：无证据的规则比没有规则更危险。宁缺毋滥。
+</quality_check>
+</step>
 
-### 5. 初始化数据文件
+<step id="4" name="规则文件">
+跨模块出现相同错误模式 → 生成 `.claude/rules/{name}.md`，带 `paths:` frontmatter。
+幂等：只补充不存在的规则。
+</step>
+
+<step id="5" name="初始化数据文件">
 ```bash
-mkdir -p .claude && touch .claude/graph-events.jsonl .claude/graph-changelog.jsonl .claude/graph-events-archive.jsonl
+mkdir -p .claude
+touch .claude/graph-events.jsonl .claude/graph-changelog.jsonl .claude/graph-events-archive.jsonl
 ```
-写入 changelog：首次 `initialized` / 重复 `re-initialized`
-删除 `.claude/graph-scan.json`
+向 changelog 写入一条记录：
+```json
+{"action":"initialized","path":".","reason":"首次初始化","timestamp":{unix_time}}
+```
+若已初始化过则写 `re-initialized`。
+删除临时文件 `.claude/graph-scan.json`。
+</step>
 
-### 6. 报告
-X 模块 / Y 个 CLAUDE.md / Z 条 @ 引用 / W 条 rules / N 个跳过
+<step id="6" name="报告">
+输出：「初始化完成：{X} 个模块 / 新增 {Y} 个 CLAUDE.md / 追加 {Z} 条段落 / {W} 条 rules / {N} 个跳过（已有完整内容）」
+</step>
+
+</mode>
 
 ---
 
