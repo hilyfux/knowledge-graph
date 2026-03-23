@@ -41,7 +41,7 @@ HOOKS_JSON=$(cat << 'ENDJSON'
 {
   "PostToolUse": [
     {
-      "matcher": "Write|Edit|Read|Glob|Grep",
+      "matcher": "Write|Edit",
       "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/track-activity.sh\"", "timeout": 2}]
     }
   ],
