@@ -1,241 +1,203 @@
-# Knowledge Graph
+# Knowledge Graph · 知识图谱
 
-[English](#english) | [中文](#中文)
+A persistent memory layer for Claude Code — hooks silently track every file operation, CLAUDE.md files store what Claude learns, and you run `/knowledge-graph update` when you're ready to refresh.
+
+Claude Code 的持久记忆层 —— Hooks 静默追踪每次文件操作，CLAUDE.md 存储 Claude 学到的知识，你觉得时机合适时运行 `/knowledge-graph update` 刷新记忆。
+
+**Requirements · 依赖**：`jq` (required · 必需), `git` (optional · 可选, enhances dependency analysis · 增强依赖分析)
 
 ---
 
-<a id="english"></a>
+## How It Works · 工作原理
 
-A persistent memory layer for Claude Code. Hooks automatically track every file operation in each session. Run `/knowledge-graph update` when you want to refresh the distributed CLAUDE.md knowledge nodes.
+Each phase is handled by the right tool — bash for data collection, LLM for decisions.
 
-**Requirements**: `jq` (required), `git` (optional, enhances dependency analysis)
-
-## How It Works
+每个阶段由合适的工具负责 —— bash 负责数据采集，LLM 负责决策。
 
 ```
-In session  → hooks (pure bash, < 30ms each)
-              PostToolUse        → records file writes/reads/searches
-              PostToolUseFailure → records failures + error summary
-              InstructionsLoaded → records CLAUDE.md loads
-              SubagentStart      → injects prohibitions into subagents
-              SessionStart       → injects knowledge summary on startup
+During session · 对话中
+  PostToolUse          → track-activity.sh      records writes / reads / searches
+                                                 记录文件写入 / 读取 / 搜索
+  PostToolUseFailure   → track-failure.sh        records failures + error message
+                                                 记录失败 + 错误信息
+  InstructionsLoaded   → track-instructions.sh   records which CLAUDE.md was loaded
+                                                 记录加载了哪些 CLAUDE.md
+  SubagentStart        → inject-subagent-context.sh  injects prohibitions into subagents
+                                                     向子 agent 注入禁忌规则
+  SessionStart         → inject-graph-context.sh     injects knowledge summary on startup
+                                                     启动时注入知识摘要
 
-Session end → on-stop.sh        → prints reminder if ≥20 events (no LLM, < 1s)
+Session end · 对话结束
+  Stop                 → on-stop.sh             prints reminder if ≥20 events, no LLM, < 1s
+                                                积累 ≥20 条时打印提示，无 LLM，< 1 秒
 
-On demand   → /knowledge-graph init    first-time setup
-            → /knowledge-graph update  detect new modules + refresh from activity
-            → /knowledge-graph status  coverage / health / heatmap
+On demand · 按需（you decide when · 你决定时机）
+  /knowledge-graph init    full project scan, generates all CLAUDE.md
+                           全量扫描项目，生成所有 CLAUDE.md
+  /knowledge-graph update  detect new modules + refresh from accumulated activity
+                           检测新模块 + 基于积累的活动记录刷新
+  /knowledge-graph status  coverage / health / blind spots / heatmap
+                           覆盖率 / 健康度 / 盲区 / 热力图
 ```
 
-## Install
+---
+
+## Install · 安装
 
 ```bash
 bash /path/to/knowledge-graph/standalone/install.sh /path/to/your-project
 ```
 
-Copies scripts + skill into `.claude/`, merges hooks into `.claude/settings.json`.
+Copies all scripts and the skill into `.claude/`, and merges hooks into `.claude/settings.json`. Safe to run on existing projects — it detects if already installed and skips.
 
-Then restart your Claude Code session and run:
+将所有脚本和 skill 复制到 `.claude/`，并将 hooks 合并到 `.claude/settings.json`。对已有项目安全 —— 检测到已安装时自动跳过。
+
+Then restart your Claude Code session and initialize:
+
+重启 Claude Code session 后初始化：
 
 ```bash
 /knowledge-graph init
-```
-
-## Usage
-
-| Command | When to run |
-|---------|-------------|
-| `/knowledge-graph init` | First time, or after manually adding new modules |
-| `/knowledge-graph status` | Check coverage / health / blind spots |
-| `/knowledge-graph update` | After accumulating activity — refreshes CLAUDE.md nodes |
-
-The Stop hook reminds you when it's time:
-```
-[kg] 💡 已积累 37 条活动记录，可运行 /knowledge-graph update 更新知识图谱
-```
-
-## Design
-
-**Bash computes, LLM decides.**
-
-| Phase | Bash | LLM |
-|-------|------|-----|
-| Tracking | single `jq` call writes events | — |
-| Update pre-analysis | `pre-analyze.sh` aggregates stats | — |
-| Writing CLAUDE.md | — | reads analysis, decides what to write |
-| Context injection | scripts assemble summary | — |
-
-**No background processes.** No `claude -p`. No automatic LLM calls. Everything LLM-driven is triggered manually by you.
-
-**Idempotent.** `init` and `update` are safe to re-run — they append missing content, never overwrite.
-
-**Evidence-based.** Every rule written to CLAUDE.md must have a source (git history, error events, or code analysis). No evidence → no rule.
-
-## CLAUDE.md Structure
-
-```markdown
-# Module Name
-## Prohibitions
-- Specific & actionable (evidence-backed)
-## When Changing
-- Changed X → see @../other/CLAUDE.md
-## Conventions
-- How this module works
-```
-
-## Project Structure
-
-```
-knowledge-graph/
-├── standalone/
-│   ├── install.sh              ← copies scripts + skill, merges hooks
-│   ├── commands/
-│   │   └── knowledge-graph.md  ← skill (init / status / update)
-│   └── scripts/
-│       ├── on-stop.sh                 ← Stop hook: reminder if ≥20 events
-│       ├── track-activity.sh          ← PostToolUse
-│       ├── track-failure.sh           ← PostToolUseFailure
-│       ├── track-instructions.sh      ← InstructionsLoaded
-│       ├── inject-graph-context.sh    ← SessionStart(startup)
-│       ├── inject-resume-context.sh   ← SessionStart(resume)
-│       ├── on-compact.sh              ← SessionStart(compact)
-│       ├── inject-subagent-context.sh ← SubagentStart
-│       ├── scan-project.sh            ← init pre-scan
-│       ├── pre-analyze.sh             ← update pre-computation
-│       └── guard.sh                   ← shared guard + helpers
-└── docs/
-```
-
-## Team Usage
-
-```bash
-# Commit knowledge nodes (share with team)
-git add CLAUDE.md **/CLAUDE.md .claude/rules/
-
-# Exclude runtime data from git
-echo '.claude/graph-events.jsonl' >> .gitignore
-echo '.claude/graph-events-archive.jsonl' >> .gitignore
-echo '.claude/graph-changelog.jsonl' >> .gitignore
-echo '.claude/graph-analysis.json' >> .gitignore
-echo '.claude/graph-scan.json' >> .gitignore
 ```
 
 ---
 
-<a id="中文"></a>
+## Commands · 命令
 
-# 知识图谱
+| Command · 命令 | When · 时机 |
+|----------------|------------|
+| `/knowledge-graph init` | First time, or after manually creating new modules · 首次使用，或手动新建模块后 |
+| `/knowledge-graph status` | Anytime you want to see the graph state · 随时查看图谱状态 |
+| `/knowledge-graph update` | When the Stop hook reminds you, or whenever you feel ready · Stop hook 提示时，或你觉得合适时 |
 
-Claude Code 的持久记忆层。Hooks 自动追踪每次对话中的文件操作。按需运行 `/knowledge-graph update` 刷新分布式 CLAUDE.md 知识节点。
+When ≥20 events have accumulated, the Stop hook prints:
 
-**依赖**：`jq`（必需）、`git`（可选，增强依赖分析）
+积累 ≥20 条事件后，Stop hook 会打印：
 
-## 工作原理
-
-```
-对话中    → hooks（纯 bash，每次 < 30ms）
-            PostToolUse        → 记录文件写入/读取/搜索
-            PostToolUseFailure → 记录失败 + 错误摘要
-            InstructionsLoaded → 记录 CLAUDE.md 加载
-            SubagentStart      → 向子 agent 注入禁忌
-            SessionStart       → 启动时注入知识摘要
-
-对话结束  → on-stop.sh        → 积累 ≥20 条时打印提示（无 LLM，< 1秒）
-
-按需执行  → /knowledge-graph init    首次初始化
-          → /knowledge-graph update  检测新模块 + 基于活动刷新
-          → /knowledge-graph status  覆盖率 / 健康度 / 热力图
-```
-
-## 安装
-
-```bash
-bash /path/to/knowledge-graph/standalone/install.sh /path/to/your-project
-```
-
-将脚本和 skill 复制到 `.claude/`，并将 hooks 合并到 `.claude/settings.json`。
-
-重启 Claude Code session 后运行：
-
-```bash
-/knowledge-graph init
-```
-
-## 使用
-
-| 命令 | 时机 |
-|------|------|
-| `/knowledge-graph init` | 首次使用，或手动新建模块后 |
-| `/knowledge-graph status` | 查看覆盖率 / 健康度 / 盲区 |
-| `/knowledge-graph update` | 积累了足够活动记录后，刷新 CLAUDE.md |
-
-Stop hook 会在合适时机提示你：
 ```
 [kg] 💡 已积累 37 条活动记录，可运行 /knowledge-graph update 更新知识图谱
 ```
 
-## 设计原则
+---
 
-**bash 做计算，LLM 做判断。**
+## Design Principles · 设计原则
 
-| 阶段 | Bash | LLM |
-|------|------|-----|
-| 追踪 | 单 jq 调用写事件 | — |
-| 更新预分析 | pre-analyze.sh 聚合统计 | — |
-| 写 CLAUDE.md | — | 读分析结果，决定写什么 |
-| 上下文注入 | 脚本组装摘要 | — |
+**Bash computes, LLM decides · Bash 做计算，LLM 做判断**
 
-**无后台进程。** 无 `claude -p`。无自动 LLM 调用。所有 LLM 操作由你手动触发。
+Bash handles all data collection and aggregation — it's fast, cheap, and deterministic. LLM only steps in when judgment is needed: reading the analysis and deciding what to write.
 
-**幂等。** `init` 和 `update` 可重复运行——只追加缺失内容，不覆盖已有内容。
+Bash 负责所有数据采集和聚合 —— 快速、低成本、确定性。LLM 只在需要判断时介入：读取分析结果，决定写什么。
 
-**有证据才写。** CLAUDE.md 里的每条规则必须有来源（git 历史、错误事件或代码分析）。无证据不写。
+| Phase · 阶段 | Bash | LLM |
+|---|---|---|
+| Tracking · 追踪 | single `jq` call per event · 每次事件单 jq 调用 | — |
+| Pre-analysis · 预分析 | `pre-analyze.sh` aggregates stats · 聚合统计 | — |
+| Writing CLAUDE.md · 写知识节点 | — | reads analysis, decides · 读分析，做决策 |
+| Context injection · 注入上下文 | scripts assemble summary · 脚本组装摘要 | — |
 
-## CLAUDE.md 结构
+**No background processes · 无后台进程**
+
+No `claude -p`. No automatic LLM calls. All LLM work is triggered manually by you — you stay in control.
+
+没有 `claude -p`。没有自动 LLM 调用。所有 LLM 工作由你手动触发 —— 你保持完全控制。
+
+**Idempotent · 幂等**
+
+`init` and `update` are safe to re-run at any time. They append missing content and skip anything already complete — they never overwrite.
+
+`init` 和 `update` 随时可以重复运行。它们追加缺失内容，跳过已有内容 —— 不会覆盖。
+
+**Evidence-based · 有证据才写**
+
+Every rule written to CLAUDE.md requires a traceable source: git commit history, recorded error events, or direct code analysis. If there's no evidence, the rule is not written. An unverified rule is more dangerous than no rule.
+
+写入 CLAUDE.md 的每条规则都必须有可追溯的来源：git 提交历史、记录的错误事件或代码分析。没有证据就不写。一条未经验证的规则比没有规则更危险。
+
+---
+
+## CLAUDE.md Structure · 知识节点格式
+
+Each module gets a CLAUDE.md that Claude loads automatically when working in that directory.
+
+每个模块有一个 CLAUDE.md，Claude 进入该目录时自动加载。
 
 ```markdown
-# 模块名
-## 禁忌
-- 具体可执行（有证据支撑）
-## 改动时
-- 改了 X → 看 @../other/CLAUDE.md
-## 约定
-- 本模块工作方式
+# Module Name · 模块名
+
+## Prohibitions · 禁忌
+- Don't do X → causes Y (source: commit abc123)
+- 不要做 X → 会导致 Y（来源：commit abc123）
+
+## When Changing · 改动时
+- When you touch auth → also check @../middleware/CLAUDE.md
+- 改动 auth → 同时看 @../middleware/CLAUDE.md
+
+## Conventions · 约定
+- This module uses pattern X because Y
+- 本模块使用 X 模式，原因是 Y
 ```
 
-## 项目结构
+`@` references create a graph of dependencies — when Claude follows a reference, it loads the target CLAUDE.md too.
+
+`@` 引用构成依赖图 —— Claude 跟随引用时，也会加载目标 CLAUDE.md。
+
+---
+
+## Project Structure · 项目结构
 
 ```
 knowledge-graph/
 ├── standalone/
-│   ├── install.sh              ← 复制脚本 + skill，合并 hooks
+│   ├── install.sh                     ← entry point · 入口
+│   │                                    copies scripts + skill, merges hooks into settings.json
+│   │                                    复制脚本 + skill，合并 hooks 到 settings.json
+│   │
 │   ├── commands/
-│   │   └── knowledge-graph.md  ← skill（init / status / update）
+│   │   └── knowledge-graph.md         ← skill file (init / status / update)
+│   │                                    skill 文件，定义三个命令的执行逻辑
+│   │
 │   └── scripts/
-│       ├── on-stop.sh                 ← Stop hook：≥20 条时提示
-│       ├── track-activity.sh          ← PostToolUse
-│       ├── track-failure.sh           ← PostToolUseFailure
-│       ├── track-instructions.sh      ← InstructionsLoaded
-│       ├── inject-graph-context.sh    ← SessionStart(startup)
-│       ├── inject-resume-context.sh   ← SessionStart(resume)
-│       ├── on-compact.sh              ← SessionStart(compact)
-│       ├── inject-subagent-context.sh ← SubagentStart
-│       ├── scan-project.sh            ← init 预扫描
-│       ├── pre-analyze.sh             ← update 预计算
-│       └── guard.sh                   ← 共享守卫 + 工具函数
+│       ├── on-stop.sh                 ← Stop hook: reminder when ≥20 events
+│       │                                Stop hook：≥20 条时提示
+│       ├── track-activity.sh          ← PostToolUse: records file operations
+│       │                                PostToolUse：记录文件操作
+│       ├── track-failure.sh           ← PostToolUseFailure: records errors
+│       │                                PostToolUseFailure：记录错误
+│       ├── track-instructions.sh      ← InstructionsLoaded: records CLAUDE.md loads
+│       │                                InstructionsLoaded：记录 CLAUDE.md 加载
+│       ├── inject-graph-context.sh    ← SessionStart(startup): injects summary
+│       │                                SessionStart(startup)：注入知识摘要
+│       ├── inject-resume-context.sh   ← SessionStart(resume): restores context
+│       │                                SessionStart(resume)：恢复工作上下文
+│       ├── on-compact.sh              ← SessionStart(compact): context after compaction
+│       │                                SessionStart(compact)：压缩后恢复上下文
+│       ├── inject-subagent-context.sh ← SubagentStart: injects prohibitions
+│       │                                SubagentStart：向子 agent 注入禁忌
+│       ├── scan-project.sh            ← used by init: scans dirs, deps, git history
+│       │                                init 使用：扫描目录、依赖、git 历史
+│       ├── pre-analyze.sh             ← used by update: aggregates event stats
+│       │                                update 使用：聚合事件统计
+│       └── guard.sh                   ← shared: validates project dir, helpers
+│                                        共享：校验项目目录，工具函数
 └── docs/
 ```
 
-## 团队使用
+---
+
+## Team Usage · 团队使用
+
+CLAUDE.md files are project knowledge — commit them. Runtime data is local — gitignore it.
+
+CLAUDE.md 文件是项目知识 —— 提交它们。运行时数据是本地的 —— 加入 gitignore。
 
 ```bash
-# 提交知识节点（共享给团队）
+# Commit knowledge to share with the team · 提交知识，共享给团队
 git add CLAUDE.md **/CLAUDE.md .claude/rules/
 
-# .gitignore 排除运行时数据
-echo '.claude/graph-events.jsonl' >> .gitignore
+# Keep runtime data local · 运行时数据保持本地
+echo '.claude/graph-events.jsonl'         >> .gitignore
 echo '.claude/graph-events-archive.jsonl' >> .gitignore
-echo '.claude/graph-changelog.jsonl' >> .gitignore
-echo '.claude/graph-analysis.json' >> .gitignore
-echo '.claude/graph-scan.json' >> .gitignore
+echo '.claude/graph-changelog.jsonl'      >> .gitignore
+echo '.claude/graph-analysis.json'        >> .gitignore
+echo '.claude/graph-scan.json'            >> .gitignore
 ```
