@@ -116,9 +116,7 @@ else
 fi
 
 # ── 初始化数据文件 ─────────────────────────────────────────────────────────────
-touch "$TARGET/.claude/graph-events.jsonl" \
-      "$TARGET/.claude/graph-changelog.jsonl" \
-      "$TARGET/.claude/graph-events-archive.jsonl"
+touch "$TARGET/.claude/graph-events.jsonl"
 
 # ── 完成 ──────────────────────────────────────────────────────────────────────
 echo ""
