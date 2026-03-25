@@ -5,8 +5,8 @@
 EVENTS="$CLAUDE_PROJECT_DIR/.claude/graph-events.jsonl"
 [ ! -f "$EVENTS" ] && exit 0
 
-LINE_COUNT=$(wc -l < "$EVENTS" 2>/dev/null || echo 0)
-[ "$LINE_COUNT" -lt 5 ] && exit 0
+LINE_COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+[ "$LINE_COUNT" -lt 20 ] && exit 0
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 

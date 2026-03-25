@@ -18,6 +18,12 @@ if [ ! -f "$EVENTS" ]; then
   fi
 fi
 
+# 积压事件提醒：session 启动时检查
+if [ -f "$EVENTS" ]; then
+  PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+  [ "$PENDING" -ge 10 ] && CONTEXT="$CONTEXT\n[知识图谱] 已积累 ${PENDING} 条未同步变更，建议运行 /knowledge-graph update"
+fi
+
 # 1. 热区 + 健康状态
 if [ -f "$ANALYSIS" ]; then
   HOT=$(jq -r '.dirs[:3][] | "  \(.w)次写入 \(.dir)"' "$ANALYSIS" 2>/dev/null)

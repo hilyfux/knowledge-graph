@@ -23,4 +23,17 @@ cat | jq -c --argjson t "$TS" --arg prefix "$PREFIX" '
   else empty end
 ' >> "$EVENTS" 2>/dev/null
 
+# 里程碑检查：每 15 次写入，block 注入一次更新提醒
+COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+if [ "$COUNT" -gt 0 ] && [ "$((COUNT % 15))" -eq 0 ]; then
+  # 找出最活跃的目录（最多3个）
+  HOT=$(tail -60 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
+    | xargs -I{} dirname {} 2>/dev/null | sort | uniq -c | sort -rn | head -3 \
+    | awk '{print "  " $2 "(" $1 "次)"}' | paste -sd '、' -)
+  MSG="[kg] 已积累 ${COUNT} 条变更记录"
+  [ -n "$HOT" ] && MSG="${MSG}，活跃区域：${HOT}"
+  MSG="${MSG}。建议运行 /knowledge-graph update 同步知识节点。"
+  printf '{"decision":"block","reason":"%s"}\n' "$MSG"
+fi
+
 exit 0
