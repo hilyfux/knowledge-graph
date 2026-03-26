@@ -2,3 +2,4 @@
 *.jsonl
 .claude/.evolving
 .claude/graph-analysis.json
+docs/superpowers/
