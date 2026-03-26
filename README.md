@@ -16,19 +16,19 @@ Each phase is handled by the right tool — bash for data collection, LLM for de
 
 ```
 During session · 对话中
-  PostToolUse          → track-activity.sh      records writes; auto-triggers update every 15 writes via block
+  PostToolUse          → track.sh               records writes; auto-triggers update every 15 writes via block
                                                  记录写入；每 15 次写入通过 block 机制自动触发 update
-  PostToolUseFailure   → track-failure.sh        records failures + error message
+  PostToolUseFailure   → track.sh               records failures + error message
                                                  记录失败 + 错误信息
-  InstructionsLoaded   → track-instructions.sh   records which CLAUDE.md was loaded
+  InstructionsLoaded   → track.sh               records which CLAUDE.md was loaded
                                                  记录加载了哪些 CLAUDE.md
-  SubagentStart        → inject-subagent-context.sh  injects prohibitions into subagents
-                                                     向子 agent 注入禁忌规则
-  SessionStart         → inject-graph-context.sh     injects knowledge summary; warns if ≥10 events pending
-                                                     启动时注入知识摘要；积压 ≥10 条时附带提醒
+  SubagentStart        → context.sh             injects prohibitions into subagents
+                                                 向子 agent 注入禁忌规则
+  SessionStart         → context.sh             injects knowledge summary; warns if ≥10 events pending
+                                                 启动时注入知识摘要；积压 ≥10 条时附带提醒
 
 Session end · 对话结束
-  Stop                 → on-stop.sh             runs pre-analyze.sh in background if ≥20 events, no LLM
+  Stop                 → analyze.sh             runs pre-analysis in background if ≥20 events, no LLM
                                                 积累 ≥20 条时后台运行预分析，无 LLM
 
 On demand · 按需
@@ -72,9 +72,9 @@ Then restart your Claude Code session and initialize:
 
 **Auto-trigger · 自动触发**
 
-Every 15 file writes, `track-activity.sh` emits a `block` decision that instructs Claude to run `update` immediately in the current session — no user prompt needed.
+Every 15 file writes, `track.sh` emits a `block` decision that instructs Claude to run `update` immediately in the current session — no user prompt needed.
 
-每写入 15 个文件，`track-activity.sh` 通过 `block` 机制向 Claude 注入指令，Claude 会立即在当前对话中执行 `update`，无需用户介入。
+每写入 15 个文件，`track.sh` 通过 `block` 机制向 Claude 注入指令，Claude 会立即在当前对话中执行 `update`，无需用户介入。
 
 ```
 PostToolUse:Edit hook → [kg] 已积累 75 条变更记录，活跃区域：src/views/pages(3次)
@@ -156,32 +156,18 @@ knowledge-graph/
 │   │                                    copies scripts + skill, merges hooks into settings.json
 │   │                                    复制脚本 + skill，合并 hooks 到 settings.json
 │   │
-│   ├── commands/
-│   │   └── knowledge-graph.md         ← skill file (init / status / update)
-│   │                                    skill 文件，定义三个命令的执行逻辑
-│   │
-│   └── scripts/
-│       ├── on-stop.sh                 ← Stop hook: reminder when ≥20 events
-│       │                                Stop hook：≥20 条时提示
-│       ├── track-activity.sh          ← PostToolUse: records file operations
-│       │                                PostToolUse：记录文件操作
-│       ├── track-failure.sh           ← PostToolUseFailure: records errors
-│       │                                PostToolUseFailure：记录错误
-│       ├── track-instructions.sh      ← InstructionsLoaded: records CLAUDE.md loads
-│       │                                InstructionsLoaded：记录 CLAUDE.md 加载
-│       ├── inject-graph-context.sh    ← SessionStart(startup): injects summary
-│       │                                SessionStart(startup)：注入知识摘要
-│       ├── inject-resume-context.sh   ← SessionStart(resume): restores context
-│       │                                SessionStart(resume)：恢复工作上下文
-│       ├── on-compact.sh              ← SessionStart(compact): context after compaction
-│       │                                SessionStart(compact)：压缩后恢复上下文
-│       ├── inject-subagent-context.sh ← SubagentStart: injects prohibitions
-│       │                                SubagentStart：向子 agent 注入禁忌
-│       ├── scan-project.sh            ← used by init: scans dirs, deps, git history
-│       │                                init 使用：扫描目录、依赖、git 历史
-│       ├── pre-analyze.sh             ← used by update: aggregates event stats
-│       │                                update 使用：聚合事件统计
-│       └── guard.sh                   ← shared: validates project dir, helpers
+│   └── skills/
+│       └── knowledge-graph/
+│           ├── SKILL.md               ← skill file (init / status / update)
+│           │                            skill 文件，定义三个命令的执行逻辑
+│           └── scripts/
+│               ├── track.sh           ← PostToolUse / PostToolUseFailure / InstructionsLoaded
+│               │                        记录文件操作、错误、CLAUDE.md 加载
+│               ├── context.sh         ← SessionStart / SubagentStart: injects summary + prohibitions
+│               │                        注入知识摘要 + 子 agent 禁忌规则
+│               ├── analyze.sh         ← Stop hook: pre-analysis when ≥20 events, no LLM
+│               │                        Stop hook：≥20 条时后台预分析，无 LLM
+│               └── guard.sh           ← shared: validates project dir, helpers
 │                                        共享：校验项目目录，工具函数
 └── docs/
 ```
