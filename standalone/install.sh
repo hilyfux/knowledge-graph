@@ -97,6 +97,12 @@ HOOKS_JSON=$(cat << 'ENDJSON'
       "matcher": "*",
       "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/analyze.sh\" stop", "timeout": 3}]
     }
+  ],
+  "UserPromptSubmit": [
+    {
+      "matcher": "*",
+      "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/prompt-trigger.sh\"", "timeout": 2}]
+    }
   ]
 }
 ENDJSON
@@ -119,10 +125,19 @@ else
         .hooks.InstructionsLoaded = ((.hooks.InstructionsLoaded // []) | map(select(.hooks[]?.command | contains("track-instructions.sh") | not)) + $h.InstructionsLoaded) |
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       | map(select(.hooks[]?.command | contains("inject-") | not) | select(.hooks[]?.command | contains("on-compact") | not)) + $h.SessionStart) |
         .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      | map(select(.hooks[]?.command | contains("inject-subagent") | not)) + $h.SubagentStart) |
-        .hooks.Stop               = ((.hooks.Stop // [])               | map(select(.hooks[]?.command | contains("on-stop") | not)) + $h.Stop)
+        .hooks.Stop               = ((.hooks.Stop // [])               | map(select(.hooks[]?.command | contains("on-stop") | not)) + $h.Stop) |
+        .hooks.UserPromptSubmit   = ((.hooks.UserPromptSubmit // [])   | map(select(.hooks[]?.command | contains("prompt-trigger") | not)) + $h.UserPromptSubmit)
       ' > "$SETTINGS"
   elif echo "$EXISTING" | jq -e '.hooks.PostToolUse[]? | select(.hooks[]?.command | contains("knowledge-graph/scripts/track.sh"))' >/dev/null 2>&1; then
-    warn "检测到已安装的 hooks，跳过合并（如需重装请先删除 settings.json 中的 kg hooks）"
+    # Already installed — only patch missing UserPromptSubmit hook
+    if ! echo "$EXISTING" | jq -e '.hooks.UserPromptSubmit[]? | select(.hooks[]?.command | contains("prompt-trigger"))' >/dev/null 2>&1; then
+      info "补充 UserPromptSubmit hook..."
+      echo "$EXISTING" | jq \
+        --argjson h "$HOOKS_JSON" \
+        '.hooks.UserPromptSubmit = ((.hooks.UserPromptSubmit // []) + $h.UserPromptSubmit)' > "$SETTINGS"
+    else
+      warn "检测到已安装的 hooks，跳过合并（如需重装请先删除 settings.json 中的 kg hooks）"
+    fi
   else
     echo "$EXISTING" | jq \
       --argjson h "$HOOKS_JSON" \
@@ -133,7 +148,8 @@ else
         .hooks.InstructionsLoaded = ((.hooks.InstructionsLoaded // []) + $h.InstructionsLoaded) |
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       + $h.SessionStart) |
         .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      + $h.SubagentStart) |
-        .hooks.Stop               = ((.hooks.Stop // [])               + $h.Stop)
+        .hooks.Stop               = ((.hooks.Stop // [])               + $h.Stop) |
+        .hooks.UserPromptSubmit   = ((.hooks.UserPromptSubmit // [])   + $h.UserPromptSubmit)
       ' > "$SETTINGS"
   fi
 fi
