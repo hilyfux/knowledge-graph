@@ -16,26 +16,26 @@ Each phase is handled by the right tool — bash for data collection, LLM for de
 
 ```
 During session · 对话中
-  PostToolUse          → track-activity.sh      records writes / reads / searches
-                                                 记录文件写入 / 读取 / 搜索
+  PostToolUse          → track-activity.sh      records writes; auto-triggers update every 15 writes via block
+                                                 记录写入；每 15 次写入通过 block 机制自动触发 update
   PostToolUseFailure   → track-failure.sh        records failures + error message
                                                  记录失败 + 错误信息
   InstructionsLoaded   → track-instructions.sh   records which CLAUDE.md was loaded
                                                  记录加载了哪些 CLAUDE.md
   SubagentStart        → inject-subagent-context.sh  injects prohibitions into subagents
                                                      向子 agent 注入禁忌规则
-  SessionStart         → inject-graph-context.sh     injects knowledge summary on startup
-                                                     启动时注入知识摘要
+  SessionStart         → inject-graph-context.sh     injects knowledge summary; warns if ≥10 events pending
+                                                     启动时注入知识摘要；积压 ≥10 条时附带提醒
 
 Session end · 对话结束
-  Stop                 → on-stop.sh             prints reminder if ≥20 events, no LLM, < 1s
-                                                积累 ≥20 条时打印提示，无 LLM，< 1 秒
+  Stop                 → on-stop.sh             runs pre-analyze.sh in background if ≥20 events, no LLM
+                                                积累 ≥20 条时后台运行预分析，无 LLM
 
-On demand · 按需（you decide when · 你决定时机）
+On demand · 按需
   /knowledge-graph init    full project scan, generates all CLAUDE.md
                            全量扫描项目，生成所有 CLAUDE.md
   /knowledge-graph update  detect new modules + refresh from accumulated activity
-                           检测新模块 + 基于积累的活动记录刷新
+                           检测新模块 + 基于积累的活动记录刷新（也会被自动触发）
   /knowledge-graph status  coverage / health / blind spots / heatmap
                            覆盖率 / 健康度 / 盲区 / 热力图
 ```
@@ -68,14 +68,18 @@ Then restart your Claude Code session and initialize:
 |----------------|------------|
 | `/knowledge-graph init` | First time, or after manually creating new modules · 首次使用，或手动新建模块后 |
 | `/knowledge-graph status` | Anytime you want to see the graph state · 随时查看图谱状态 |
-| `/knowledge-graph update` | When the Stop hook reminds you, or whenever you feel ready · Stop hook 提示时，或你觉得合适时 |
+| `/knowledge-graph update` | Auto-triggered every 15 writes, or run manually anytime · 每 15 次写入自动触发，也可随时手动运行 |
 
-When ≥20 events have accumulated, the Stop hook prints:
+**Auto-trigger · 自动触发**
 
-积累 ≥20 条事件后，Stop hook 会打印：
+Every 15 file writes, `track-activity.sh` emits a `block` decision that instructs Claude to run `update` immediately in the current session — no user prompt needed.
+
+每写入 15 个文件，`track-activity.sh` 通过 `block` 机制向 Claude 注入指令，Claude 会立即在当前对话中执行 `update`，无需用户介入。
 
 ```
-[kg] 💡 已积累 37 条活动记录，可运行 /knowledge-graph update 更新知识图谱
+PostToolUse:Edit hook → [kg] 已积累 75 条变更记录，活跃区域：src/views/pages(3次)
+                         【kg 自动指令】请立即执行知识图谱增量更新 ...
+                         → Claude runs /knowledge-graph update automatically
 ```
 
 ---
