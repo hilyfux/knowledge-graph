@@ -1,11 +1,13 @@
 ---
 name: knowledge-graph
 description: >
-  Manages project knowledge graph (CLAUDE.md nodes). Auto-invoke when you
-  receive a "【kg 自动指令】" message in a hook block, or when the user asks
-  about project module structure or knowledge graph state.
-  Do NOT invoke for general coding tasks.
-  Arguments: init (full scan, first time) / update (incremental refresh from events) / status (health check).
+  管理项目知识图谱（CLAUDE.md 节点）。以下情况触发 update：
+  1. hook 块中收到"【kg 自动指令】"消息；
+  2. 用户发出完成信号："整理一下"、"清理下"、"确认"、"ok了"、"可以了"、"搞定"、"行了"——说明一轮任务有阶段性成果，需固化知识；
+  3. 用户发出失败信号："还不行"、"不对"、"不行"、"又错了"——说明遇到问题，需记录教训到禁忌；
+  4. 用户说"更新/刷新知识图谱"、"图谱状态"、"有多少盲区"、提到 CLAUDE.md 覆盖率。
+  不要用于普通编码任务。
+  参数：init（首次全量扫描）/ update（增量刷新）/ status（健康检查）。
 argument-hint: [init|update|status]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
