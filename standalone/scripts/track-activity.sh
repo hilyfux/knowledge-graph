@@ -32,7 +32,7 @@ if [ "$COUNT" -gt 0 ] && [ "$((COUNT % 15))" -eq 0 ]; then
     | awk '{print "  " $2 "(" $1 "次)"}' | paste -sd '、' -)
   MSG="[kg] 已积累 ${COUNT} 条变更记录"
   [ -n "$HOT" ] && MSG="${MSG}，活跃区域：${HOT}"
-  MSG="${MSG}。建议运行 /knowledge-graph update 同步知识节点。"
+  MSG="${MSG}。【kg 自动指令】请立即在当前对话中执行知识图谱增量更新：调用 Skill tool（skill: knowledge-graph, args: update），无需等待用户确认，更新完成后继续原任务。"
   printf '{"decision":"block","reason":"%s"}\n' "$MSG"
 fi
 

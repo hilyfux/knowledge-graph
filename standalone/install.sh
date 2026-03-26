@@ -15,6 +15,11 @@ error()   { echo -e "${RED}[kg]${NC} $*" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || error "需要 jq，请先安装：brew install jq"
 
 TARGET="${1:-$(pwd)}"
+# 防止误传 .claude 目录：自动修正为项目根目录
+if [ "$(basename "$TARGET")" = ".claude" ]; then
+  TARGET="$(dirname "$TARGET")"
+  warn "检测到目标为 .claude 目录，已自动修正为项目根目录：$TARGET"
+fi
 [ "$TARGET" = "$HOME" ] && error "不能安装到 HOME 目录"
 [ "$TARGET" = "/" ]     && error "不能安装到根目录"
 [ ! -d "$TARGET" ]      && error "目标目录不存在：$TARGET"
