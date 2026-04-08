@@ -12,6 +12,20 @@ Claude Code forgets everything between sessions. Knowledge Graph fixes that. It 
 
 ---
 
+## Background & Methodology
+
+This project was built on three pillars:
+
+1. **Anthropic Internal Engineering Practices** — Inspired by how Anthropic engineers maintain project context when working with Claude Code in production. Their workflow patterns informed the evidence-based rule system and modular CLAUDE.md architecture.
+
+2. **Karpathy's AutoResearch Methodology** — Applies Andrej Karpathy's autonomous research pattern to knowledge building: let the system observe, collect evidence, and synthesize insights without human prompting. The bash hooks + auto-analysis pipeline is a direct implementation of this philosophy.
+
+3. **Latest LLM Knowledge Graph Research** — Addresses the fundamental limitation of all AI coding assistants: context window amnesia. Rather than using heavyweight solutions (Neo4j, vector databases), this takes a minimalist approach: structured text files committed to git.
+
+> *"The best memory system is one that's invisible, auditable, and shareable."*
+
+
+
 ## Why This Exists
 
 Claude Code is powerful, but stateless. Every new session starts from zero -- it re-discovers the same pitfalls, re-learns the same conventions, and repeats the same mistakes. Knowledge Graph gives Claude a persistent, evidence-based memory layer that grows with your project.
