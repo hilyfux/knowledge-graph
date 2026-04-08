@@ -1,191 +1,242 @@
-# Knowledge Graph · 知识图谱
+# :brain: Knowledge Graph for Claude Code
 
-A persistent memory layer for Claude Code — hooks silently track every file operation, CLAUDE.md files store what Claude learns, and you run `/knowledge-graph update` when you're ready to refresh.
+**Persistent memory that makes Claude Code smarter with every session.**
 
-Claude Code 的持久记忆层 —— Hooks 静默追踪每次文件操作，CLAUDE.md 存储 Claude 学到的知识，你觉得时机合适时运行 `/knowledge-graph update` 刷新记忆。
+[![GitHub stars](https://img.shields.io/github/stars/hilyfux/knowledge-graph?style=social)](https://github.com/hilyfux/knowledge-graph)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/hilyfux/knowledge-graph)](https://github.com/hilyfux/knowledge-graph/commits/main)
 
-**Requirements · 依赖**：`jq` (required · 必需), `git` (optional · 可选, enhances dependency analysis · 增强依赖分析)
+Claude Code forgets everything between sessions. Knowledge Graph fixes that. It silently tracks every file operation via hooks, builds distributed `CLAUDE.md` knowledge nodes across your project, and injects the right context when Claude needs it -- automatically.
 
----
-
-## How It Works · 工作原理
-
-Each phase is handled by the right tool — bash for data collection, LLM for decisions.
-
-每个阶段由合适的工具负责 —— bash 负责数据采集，LLM 负责决策。
-
-```
-During session · 对话中
-  PostToolUse          → track.sh               records writes; auto-triggers update every 15 writes via block
-                                                 记录写入；每 15 次写入通过 block 机制自动触发 update
-  PostToolUseFailure   → track.sh               records failures + error message
-                                                 记录失败 + 错误信息
-  InstructionsLoaded   → track.sh               records which CLAUDE.md was loaded
-                                                 记录加载了哪些 CLAUDE.md
-  SubagentStart        → context.sh             injects prohibitions into subagents
-                                                 向子 agent 注入禁忌规则
-  SessionStart         → context.sh             injects knowledge summary; warns if ≥10 events pending
-                                                 启动时注入知识摘要；积压 ≥10 条时附带提醒
-
-Session end · 对话结束
-  Stop                 → analyze.sh             runs pre-analysis in background if ≥20 events, no LLM
-                                                积累 ≥20 条时后台运行预分析，无 LLM
-
-On demand · 按需
-  /knowledge-graph init    full project scan, generates all CLAUDE.md
-                           全量扫描项目，生成所有 CLAUDE.md
-  /knowledge-graph update  detect new modules + refresh from accumulated activity
-                           检测新模块 + 基于积累的活动记录刷新（也会被自动触发）
-  /knowledge-graph status  coverage / health / blind spots / heatmap
-                           覆盖率 / 健康度 / 盲区 / 热力图
-```
+**Zero dependencies beyond `jq`. No databases. No vector stores. No external services. Just bash scripts and git.**
 
 ---
 
-## Install · 安装
+## Why This Exists
+
+Claude Code is powerful, but stateless. Every new session starts from zero -- it re-discovers the same pitfalls, re-learns the same conventions, and repeats the same mistakes. Knowledge Graph gives Claude a persistent, evidence-based memory layer that grows with your project.
+
+### vs Competitors
+
+| | **Knowledge Graph** | [mcp-knowledge-graph](https://github.com/shaneholloman/mcp-knowledge-graph) (838+ stars) | [Memento](https://github.com/skydeckai/mcp-server-memento) |
+|---|---|---|---|
+| **Storage** | Plain files (`CLAUDE.md`) in your repo | Neo4j graph database | Vector database |
+| **Dependencies** | `jq` only | Neo4j + Node.js + Docker | Python + ChromaDB |
+| **Privacy** | 100% local, everything in `.claude/` | Requires running database | Requires running database |
+| **Version control** | Knowledge committed to git, shared with team | External DB, not in repo | External DB, not in repo |
+| **Setup time** | 30 seconds, one bash command | Database provisioning required | Database provisioning required |
+| **LLM cost** | Near zero -- bash does data collection, LLM only decides what to write | Every query hits LLM | Embedding costs per operation |
+| **How it works** | Hooks track activity; bash scripts analyze; LLM writes knowledge | MCP server with CRUD operations | MCP server with semantic search |
+| **Team sharing** | `git push` -- knowledge travels with code | Manual DB export/import | Manual DB export/import |
+| **Runs without internet** | Yes | Yes (local Neo4j) | Yes (local ChromaDB) |
+| **Works with Claude Code hooks** | Native -- built specifically for it | Generic MCP server | Generic MCP server |
+
+**TL;DR:** Other tools bolt a database onto Claude. Knowledge Graph embeds knowledge directly into your repository, where it belongs.
+
+---
+
+## Quick Start
 
 ```bash
-bash /path/to/knowledge-graph/standalone/install.sh /path/to/your-project
-```
+# 1. Install (copies scripts to your project's .claude/ directory)
+bash <(curl -fsSL https://raw.githubusercontent.com/hilyfux/knowledge-graph/main/standalone/install.sh) /path/to/your-project
 
-Copies all scripts and the skill into `.claude/`, and merges hooks into `.claude/settings.json`. Safe to run on existing projects — it detects if already installed and skips.
+# 2. Restart Claude Code to activate hooks
 
-将所有脚本和 skill 复制到 `.claude/`，并将 hooks 合并到 `.claude/settings.json`。对已有项目安全 —— 检测到已安装时自动跳过。
-
-Then restart your Claude Code session and initialize:
-
-重启 Claude Code session 后初始化：
-
-```bash
+# 3. Initialize the knowledge graph
 /knowledge-graph init
 ```
 
+That's it. From now on, Claude Code will:
+- Track every file write and edit automatically
+- Build knowledge nodes (`CLAUDE.md`) in each module
+- Inject relevant context at session start
+- Auto-trigger updates every 15 file writes
+
 ---
 
-## Commands · 命令
-
-| Command · 命令 | When · 时机 |
-|----------------|------------|
-| `/knowledge-graph init` | First time, or after manually creating new modules · 首次使用，或手动新建模块后 |
-| `/knowledge-graph status` | Anytime you want to see the graph state · 随时查看图谱状态 |
-| `/knowledge-graph update` | Auto-triggered every 15 writes, or run manually anytime · 每 15 次写入自动触发，也可随时手动运行 |
-
-**Auto-trigger · 自动触发**
-
-Every 15 file writes, `track.sh` emits a `block` decision that instructs Claude to run `update` immediately in the current session — no user prompt needed.
-
-每写入 15 个文件，`track.sh` 通过 `block` 机制向 Claude 注入指令，Claude 会立即在当前对话中执行 `update`，无需用户介入。
+## How It Works
 
 ```
-PostToolUse:Edit hook → [kg] 已积累 75 条变更记录，活跃区域：src/views/pages(3次)
-                         【kg 自动指令】请立即执行知识图谱增量更新 ...
-                         → Claude runs /knowledge-graph update automatically
+  You code normally with Claude Code
+              |
+              v
+  +-----------------------+
+  | Hooks fire silently   |  PostToolUse, PostToolUseFailure,
+  | on every operation    |  InstructionsLoaded, SessionStart,
+  |                       |  SubagentStart, Stop
+  +-----------+-----------+
+              |
+              v
+  +-----------------------+
+  | track.sh records      |  Pure bash + jq
+  | events to JSONL       |  ~3ms per event
+  +-----------+-----------+
+              |
+              |  Every 15 writes (auto)
+              |  or /knowledge-graph update (manual)
+              v
+  +-----------------------+
+  | analyze.sh            |  Pure bash: aggregates stats,
+  | pre-analyzes data     |  finds blind spots, detects staleness
+  +-----------+-----------+
+              |
+              v
+  +-----------------------+
+  | LLM reads analysis,   |  Only step that uses LLM tokens
+  | writes CLAUDE.md       |  Evidence-based: no proof = no rule
+  +-----------+-----------+
+              |
+              v
+  +-----------------------+
+  | context.sh injects    |  Next session starts with
+  | knowledge at startup  |  full project awareness
+  +-----------------------+
 ```
 
----
+### The Hook System
 
-## Design Principles · 设计原则
-
-**Bash computes, LLM decides · Bash 做计算，LLM 做判断**
-
-Bash handles all data collection and aggregation — it's fast, cheap, and deterministic. LLM only steps in when judgment is needed: reading the analysis and deciding what to write.
-
-Bash 负责所有数据采集和聚合 —— 快速、低成本、确定性。LLM 只在需要判断时介入：读取分析结果，决定写什么。
-
-| Phase · 阶段 | Bash | LLM |
-|---|---|---|
-| Tracking · 追踪 | single `jq` call per event · 每次事件单 jq 调用 | — |
-| Pre-analysis · 预分析 | `pre-analyze.sh` aggregates stats · 聚合统计 | — |
-| Writing CLAUDE.md · 写知识节点 | — | reads analysis, decides · 读分析，做决策 |
-| Context injection · 注入上下文 | scripts assemble summary · 脚本组装摘要 | — |
-
-**No background processes · 无后台进程**
-
-No `claude -p`. No automatic LLM calls. All LLM work is triggered manually by you — you stay in control.
-
-没有 `claude -p`。没有自动 LLM 调用。所有 LLM 工作由你手动触发 —— 你保持完全控制。
-
-**Idempotent · 幂等**
-
-`init` and `update` are safe to re-run at any time. They append missing content and skip anything already complete — they never overwrite.
-
-`init` 和 `update` 随时可以重复运行。它们追加缺失内容，跳过已有内容 —— 不会覆盖。
-
-**Evidence-based · 有证据才写**
-
-Every rule written to CLAUDE.md requires a traceable source: git commit history, recorded error events, or direct code analysis. If there's no evidence, the rule is not written. An unverified rule is more dangerous than no rule.
-
-写入 CLAUDE.md 的每条规则都必须有可追溯的来源：git 提交历史、记录的错误事件或代码分析。没有证据就不写。一条未经验证的规则比没有规则更危险。
+| Hook | Script | What it does |
+|------|--------|-------------|
+| `PostToolUse` (Write/Edit) | `track.sh` | Records file changes; auto-triggers update every 15 writes |
+| `PostToolUseFailure` | `track.sh` | Records failures + error messages as learning opportunities |
+| `InstructionsLoaded` | `track.sh` | Records which `CLAUDE.md` files Claude loaded |
+| `SessionStart` | `context.sh` | Injects knowledge summary + warns if events are piling up |
+| `SubagentStart` | `context.sh` | Injects prohibitions into sub-agents |
+| `Stop` | `analyze.sh` | Runs background pre-analysis when 20+ events accumulated |
 
 ---
 
-## CLAUDE.md Structure · 知识节点格式
+## Commands
 
-Each module gets a CLAUDE.md that Claude loads automatically when working in that directory.
+| Command | Purpose |
+|---------|---------|
+| `/knowledge-graph init` | Full project scan. Generates `CLAUDE.md` for every module. |
+| `/knowledge-graph update` | Incremental refresh from accumulated activity. Also auto-triggered every 15 writes. |
+| `/knowledge-graph status` | Coverage, health, blind spots, and activity heatmap. |
+| `/knowledge-graph query <question>` | Search the knowledge graph and get sourced answers. |
 
-每个模块有一个 CLAUDE.md，Claude 进入该目录时自动加载。
+---
+
+## What Gets Generated
+
+Each module directory gets a `CLAUDE.md` that Claude loads automatically:
 
 ```markdown
-# Module Name · 模块名
+# auth-middleware
 
-## Prohibitions · 禁忌
-- Don't do X → causes Y (source: commit abc123)
-- 不要做 X → 会导致 Y（来源：commit abc123）
+## Prohibitions
+- Don't bypass token refresh in tests -> causes flaky CI (source: commit a1b2c3d)
 
-## When Changing · 改动时
-- When you touch auth → also check @../middleware/CLAUDE.md
-- 改动 auth → 同时看 @../middleware/CLAUDE.md
+## When Changing
+- Modifying token logic -> also check @../session/CLAUDE.md
 
-## Conventions · 约定
-- This module uses pattern X because Y
-- 本模块使用 X 模式，原因是 Y
+## Conventions
+- All auth errors return 401 with { code, message } shape
 ```
 
-`@` references create a graph of dependencies — when Claude follows a reference, it loads the target CLAUDE.md too.
-
-`@` 引用构成依赖图 —— Claude 跟随引用时，也会加载目标 CLAUDE.md。
+The `@` references create a dependency graph -- when Claude follows a reference, it loads the linked knowledge too.
 
 ---
 
-## Project Structure · 项目结构
+## Design Principles
+
+1. **Bash computes, LLM decides.** Data collection and aggregation are pure bash (~3ms per event). The LLM only steps in when judgment is needed -- reading analysis and deciding what knowledge to write.
+
+2. **Evidence-based only.** Every rule in `CLAUDE.md` must trace back to a git commit, a recorded error, or direct code analysis. No evidence, no rule. An unverified rule is worse than no rule.
+
+3. **Idempotent.** `init` and `update` are safe to re-run anytime. They append missing content and skip what's already complete -- they never overwrite.
+
+4. **No background processes.** No `claude -p`. No automatic LLM calls. You stay in control.
+
+5. **Git-native.** Knowledge files are committed to your repo and shared with your team via `git push`. Runtime data stays local in `.gitignore`.
+
+---
+
+## Project Structure
 
 ```
 knowledge-graph/
 ├── standalone/
-│   ├── install.sh                     ← entry point · 入口
-│   │                                    copies scripts + skill, merges hooks into settings.json
-│   │                                    复制脚本 + skill，合并 hooks 到 settings.json
-│   │
+│   ├── install.sh              <- Entry point: copies scripts, merges hooks
 │   └── skills/
 │       └── knowledge-graph/
-│           ├── SKILL.md               ← skill file (init / status / update)
-│           │                            skill 文件，定义三个命令的执行逻辑
+│           ├── SKILL.md        <- Skill definition (init/update/status/query)
 │           └── scripts/
-│               ├── track.sh           ← PostToolUse / PostToolUseFailure / InstructionsLoaded
-│               │                        记录文件操作、错误、CLAUDE.md 加载
-│               ├── context.sh         ← SessionStart / SubagentStart: injects summary + prohibitions
-│               │                        注入知识摘要 + 子 agent 禁忌规则
-│               ├── analyze.sh         ← Stop hook: pre-analysis when ≥20 events, no LLM
-│               │                        Stop hook：≥20 条时后台预分析，无 LLM
-│               └── guard.sh           ← shared: validates project dir, helpers
-│                                        共享：校验项目目录，工具函数
+│               ├── track.sh    <- Event recording (PostToolUse hooks)
+│               ├── context.sh  <- Context injection (SessionStart hooks)
+│               ├── analyze.sh  <- Pre-analysis engine (Stop hook)
+│               ├── guard.sh    <- Shared utilities and validation
+│               └── prompt-trigger.sh  <- User prompt detection
 └── docs/
+```
+
+**After installation in your project:**
+
+```
+your-project/
+├── .claude/
+│   ├── settings.json           <- Hooks auto-merged here
+│   ├── knowledge-index.md      <- Auto-generated module index
+│   ├── rules/                  <- Cross-module rules
+│   └── skills/
+│       └── knowledge-graph/
+│           ├── SKILL.md
+│           ├── scripts/
+│           └── data/           <- Runtime data (gitignored)
+├── src/
+│   ├── auth/
+│   │   └── CLAUDE.md           <- Module knowledge (committed)
+│   ├── api/
+│   │   └── CLAUDE.md
+│   └── ...
+└── CLAUDE.md                   <- Root project knowledge
 ```
 
 ---
 
-## Team Usage · 团队使用
+## Team Usage
 
-CLAUDE.md files are project knowledge — commit them. Runtime data is local — gitignore it.
-
-CLAUDE.md 文件是项目知识 —— 提交它们。运行时数据是本地的 —— 加入 gitignore。
+Knowledge files are project knowledge -- commit them. Runtime data is local -- gitignore it.
 
 ```bash
-# Commit knowledge to share with the team · 提交知识，共享给团队
+# Share knowledge with your team
 git add CLAUDE.md **/CLAUDE.md .claude/rules/
 
-# Keep runtime data local · 运行时数据保持本地
-echo '.claude/graph-events.jsonl'  >> .gitignore
-echo '.claude/graph-analysis.json' >> .gitignore
-echo '.claude/graph-scan.json'     >> .gitignore
+# Runtime data stays local (auto-added by installer)
+# .claude/skills/knowledge-graph/data/
 ```
+
+When a teammate pulls your repo, their Claude Code sessions immediately benefit from the accumulated knowledge -- no setup needed beyond the initial install.
+
+---
+
+## Requirements
+
+- **`jq`** (required) -- install via `brew install jq` / `apt install jq`
+- **`git`** (optional) -- enhances dependency analysis and evidence tracing
+- **Claude Code** with hooks support
+
+---
+
+## Contributing
+
+Contributions are welcome! Here's how:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/my-improvement`)
+3. Make your changes
+4. Test by running `install.sh` against a sample project
+5. Submit a pull request
+
+**Areas where help is appreciated:**
+- Support for additional hook types
+- Performance improvements for large monorepos
+- Documentation and examples
+- Integration testing
+
+---
+
+## License
+
+[MIT](LICENSE) -- use it however you want.
