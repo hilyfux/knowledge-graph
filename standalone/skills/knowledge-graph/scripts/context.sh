@@ -15,6 +15,13 @@ case "$CMD" in
     # Clean up stale lock files
     rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
+    # Knowledge index: inject if available (Karpathy-style index.md)
+    INDEX="$CLAUDE_PROJECT_DIR/.claude/knowledge-index.md"
+    if [ -f "$INDEX" ]; then
+      INDEX_CONTENT=$(cat "$INDEX" 2>/dev/null | head -50)
+      [ -n "$INDEX_CONTENT" ] && CONTEXT="$CONTEXT\n[知识索引]\n$INDEX_CONTENT"
+    fi
+
     # Not initialized: no events + no CLAUDE.md anywhere
     if [ ! -f "$EVENTS" ]; then
       if ! find "$CLAUDE_PROJECT_DIR" -maxdepth 3 -name "CLAUDE.md" \
