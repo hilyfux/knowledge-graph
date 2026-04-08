@@ -4,13 +4,6 @@
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/guard.sh"
 
-# 非交互模式（claude -p / --print）跳过，避免干扰管道任务
-# Claude Code 在非交互模式下设置这些环境变量
-[ "$CLAUDE_NON_INTERACTIVE" = "1" ] && exit 0
-[ "$CLAUDE_NON_INTERACTIVE" = "true" ] && exit 0
-# 备用检测：-p 模式的父进程参数中包含 -p 或 --print
-ps -o args= -p "$PPID" 2>/dev/null | grep -qE '\s-p\b|\s--print\b' && exit 0
-
 # 读取用户消息
 INPUT=$(cat)
 PROMPT=$(echo "$INPUT" | jq -r '.prompt // ""' 2>/dev/null)
