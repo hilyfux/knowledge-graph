@@ -76,6 +76,12 @@ chmod +x "$SKILL_DST/scripts/"*.sh
 # ── Merge hooks into settings.json ────────────────────────────────────────────
 HOOKS_JSON=$(cat << 'ENDJSON'
 {
+  "PreToolUse": [
+    {
+      "matcher": "Read",
+      "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/track.sh\" read", "timeout": 3}]
+    }
+  ],
   "PostToolUse": [
     {
       "matcher": "Write|Edit",

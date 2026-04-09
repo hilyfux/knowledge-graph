@@ -44,6 +44,37 @@ case "$CMD" in
     ' >> "$EVENTS" 2>/dev/null
     ;;
 
+  read)
+    # PreToolUse: Read — record file read + predictive context injection
+    INPUT=$(cat)
+    FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
+    [ -z "$FILE_PATH" ] && exit 0
+    REL=$(echo "$FILE_PATH" | sed "s|^$PREFIX||")
+    # 记录 read 事件
+    echo "{\"e\":\"r\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS" 2>/dev/null
+
+    # 预测性上下文注入：基于 co-change 历史，预加载关联模块的 CLAUDE.md
+    TARGET_DIR=$(dirname "$REL")
+    PREDICTED=$(echo "{\"file_path\":\"$FILE_PATH\"}" | bash "$SCRIPT_DIR/infer.sh" predict 2>/dev/null)
+    PRED_DIRS=$(echo "$PREDICTED" | jq -r '.[0:3][] | .dir' 2>/dev/null)
+    [ -z "$PRED_DIRS" ] && exit 0
+
+    # 读取关联模块的禁忌，注入为 additionalContext
+    CONTEXT=""
+    while IFS= read -r pdir; do
+      [ -z "$pdir" ] && continue
+      CMD_FILE="$CLAUDE_PROJECT_DIR/$pdir/CLAUDE.md"
+      [ ! -f "$CMD_FILE" ] && continue
+      RULES=$(sed -n '/^## 禁忌/,/^## /{ /^## /d; /^$/d; p; }' "$CMD_FILE" 2>/dev/null | head -3)
+      [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}\n"
+    done <<< "$PRED_DIRS"
+
+    if [ -n "$CONTEXT" ]; then
+      ESCAPED=$(printf '%s' "$CONTEXT" | sed 's/"/\\"/g' | tr '\n' ' ')
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"[预测关联] %s"}}\n' "$ESCAPED"
+    fi
+    ;;
+
   instructions)
     # InstructionsLoaded — record which CLAUDE.md was loaded
     cat | jq -c --argjson t "$TS" --arg prefix "$PREFIX" '
