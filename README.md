@@ -67,6 +67,10 @@ That's it. From now on, Claude Code will:
 - Inject relevant context at session start
 - Auto-trigger updates every 15 file writes
 
+## Demo
+
+> Demo GIF / terminal walkthrough coming soon. The intended flow is: install, restart Claude Code, run `/knowledge-graph init`, then watch `CLAUDE.md` knowledge nodes accumulate as hooks record real work across sessions.
+
 ---
 
 ## How It Works
