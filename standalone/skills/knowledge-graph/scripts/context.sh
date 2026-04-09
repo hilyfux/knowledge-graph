@@ -16,7 +16,7 @@ case "$CMD" in
     rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
     # Knowledge index: inject if available (Karpathy-style index.md)
-    INDEX="$CLAUDE_PROJECT_DIR/.claude/knowledge-index.md"
+    INDEX="$KG_DATA/knowledge-index.md"
     if [ -f "$INDEX" ]; then
       INDEX_CONTENT=$(cat "$INDEX" 2>/dev/null | head -50)
       [ -n "$INDEX_CONTENT" ] && CONTEXT="$CONTEXT\n[知识索引]\n$INDEX_CONTENT"

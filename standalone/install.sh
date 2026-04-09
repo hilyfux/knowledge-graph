@@ -42,6 +42,28 @@ if [ -f "$TARGET/.claude/scripts/track-activity.sh" ]; then
   info "已清理旧版脚本"
 fi
 
+# ── Clean up scattered legacy files ───────────────────────────────────────────
+LEGACY_FILES=(
+  "$TARGET/.claude/graph-changelog.jsonl"
+  "$TARGET/.claude/graph-changelog.jsonl.reported"
+  "$TARGET/.claude/graph-events-archive.jsonl"
+  "$TARGET/.claude/knowledge-graph.md"
+  "$TARGET/.claude/knowledge-index.md"
+)
+for f in "${LEGACY_FILES[@]}"; do
+  [ -f "$f" ] && rm -f "$f" && info "已清理散落文件：$(basename "$f")"
+done
+# Migrate graph-events.jsonl from .claude/ root to data/ (if still there)
+if [ -f "$TARGET/.claude/graph-events.jsonl" ]; then
+  mkdir -p "$SKILL_DST/data"
+  mv "$TARGET/.claude/graph-events.jsonl" "$SKILL_DST/data/graph-events.jsonl"
+  info "已迁移 graph-events.jsonl → data/"
+fi
+if [ -f "$TARGET/.claude/graph-analysis.json" ]; then
+  rm -f "$TARGET/.claude/graph-analysis.json"
+  info "已清理散落的 graph-analysis.json"
+fi
+
 # ── Create directories ─────────────────────────────────────────────────────────
 mkdir -p "$SKILL_DST/scripts" "$SKILL_DST/data"
 
