@@ -15,12 +15,8 @@ case "$CMD" in
     # Clean up stale lock files
     rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
-    # Knowledge index: inject if available (Karpathy-style index.md)
-    INDEX="$KG_DATA/knowledge-index.md"
-    if [ -f "$INDEX" ]; then
-      INDEX_CONTENT=$(cat "$INDEX" 2>/dev/null | head -50)
-      [ -n "$INDEX_CONTENT" ] && CONTEXT="$CONTEXT\n[知识索引]\n$INDEX_CONTENT"
-    fi
+    # 知识索引已通过 @include 指令在 .claude/CLAUDE.md 中自动加载到系统提示词
+    # 无需 hook 重复注入，此处只注入动态信息（活跃区域、待分析事件）
 
     # Not initialized: no events + no CLAUDE.md anywhere
     if [ ! -f "$EVENTS" ]; then
@@ -123,19 +119,18 @@ case "$CMD" in
     [ -n "$CONTEXT" ] && emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")" "SubagentStart"
     ;;
 
+  precompact)
+    # PreCompact: 注入指令引导压缩器保留知识图谱关键信息
+    GUIDE="压缩时请保留：1)每个模块的禁忌规则（## 禁忌段落）2)当前进行中的任务和文件路径 3)已发现的错误模式和修复方案。这些信息来自项目知识图谱，丢失后需重新学习。"
+    emit_hook_context "$(json_escape "$GUIDE")" "PreCompact"
+    ;;
+
   postcompact)
-    # PostCompact: 重新注入知识索引（compact 后 SessionStart 注入的内容已丢失）
-    CONTEXT=""
-    INDEX="$KG_DATA/knowledge-index.md"
-    if [ -f "$INDEX" ]; then
-      INDEX_CONTENT=$(cat "$INDEX" 2>/dev/null | head -50)
-      [ -n "$INDEX_CONTENT" ] && CONTEXT="[知识索引（compact 后重新注入）]\n$INDEX_CONTENT"
-    fi
+    # PostCompact: 补充注入待分析活动提醒（知识索引已通过 @include 自动存活）
     if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
       PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-      [ "$PENDING" -ge 5 ] && CONTEXT="$CONTEXT\n[知识图谱] 待分析活动：${PENDING} 条"
+      [ "$PENDING" -ge 5 ] && emit_hook_context "$(json_escape "[知识图谱] 待分析活动：${PENDING} 条")" "PostCompact"
     fi
-    [ -n "$CONTEXT" ] && emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")" "PostCompact"
     ;;
 
 esac

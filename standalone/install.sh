@@ -114,6 +114,12 @@ HOOKS_JSON=$(cat << 'ENDJSON'
       "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/context.sh\" subagent", "timeout": 3}]
     }
   ],
+  "PreCompact": [
+    {
+      "matcher": "*",
+      "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/context.sh\" precompact", "timeout": 3}]
+    }
+  ],
   "PostCompact": [
     {
       "matcher": "*",
@@ -194,6 +200,20 @@ fi
 
 # ── Init data file ─────────────────────────────────────────────────────────────
 touch "$SKILL_DST/data/graph-events.jsonl"
+
+# ── Setup @include in .claude/CLAUDE.md ───────────────────────────────────────
+INCLUDE_LINE="@.claude/skills/knowledge-graph/data/knowledge-index.md"
+DOT_CLAUDE_MD="$TARGET/.claude/CLAUDE.md"
+if [ -f "$DOT_CLAUDE_MD" ]; then
+  if ! grep -qF "$INCLUDE_LINE" "$DOT_CLAUDE_MD"; then
+    echo "" >> "$DOT_CLAUDE_MD"
+    echo "$INCLUDE_LINE" >> "$DOT_CLAUDE_MD"
+    info "已在 .claude/CLAUDE.md 中添加知识索引 @include"
+  fi
+else
+  echo "$INCLUDE_LINE" > "$DOT_CLAUDE_MD"
+  info "已创建 .claude/CLAUDE.md 并添加知识索引 @include"
+fi
 
 # ── Update .gitignore ──────────────────────────────────────────────────────────
 GITIGNORE="$TARGET/.gitignore"
