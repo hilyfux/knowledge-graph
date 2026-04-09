@@ -1,19 +1,32 @@
 ---
 name: Feature request
-about: Suggest an improvement for the knowledge graph workflow
+about: Suggest an improvement for Knowledge Graph
 title: '[feature] '
 labels: enhancement
 assignees: ''
 ---
 
 ## Problem to solve
-What limitation or pain point are you hitting?
+
+What recurring problem or workflow gap are you trying to address?
 
 ## Proposed idea
-Describe the feature or workflow change you want.
 
-## Why it matters
-How would this improve persistent memory, setup, or day-to-day Claude Code usage?
+Describe the improvement you want.
+
+## Why this fits the project
+
+Explain how it aligns with the project's core principles:
+
+- zero-dependency by default
+- git-native workflows
+- privacy-first local operation
+- low overhead
 
 ## Alternatives considered
-What have you tried already?
+
+List any simpler approaches or workarounds you considered.
+
+## Additional context
+
+Add links, examples, or prior art if helpful.

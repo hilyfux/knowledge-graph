@@ -1,30 +1,40 @@
 ---
 name: Bug report
-about: Report a broken install, hook behavior, or knowledge graph issue
+about: Report a problem with installation, hooks, or runtime behavior
 title: '[bug] '
 labels: bug
 assignees: ''
 ---
 
 ## Summary
-A clear description of the bug.
+
+Describe the problem clearly.
 
 ## Environment
+
 - OS:
 - Shell:
 - Claude Code version:
-- knowledge-graph version / commit:
+- `jq` version:
+
+## What you expected
+
+Describe the expected behavior.
+
+## What happened instead
+
+Describe the actual behavior.
 
 ## Reproduction steps
+
 1.
 2.
 3.
 
-## Expected behavior
-What should have happened.
+## Relevant files or snippets
 
-## Actual behavior
-What actually happened.
+Paste any relevant `.claude/settings.json` hook config, logs, or error output.
 
-## Relevant files or logs
-Paste sanitized output from `.claude/settings.json`, hook output, or terminal logs if relevant.
+## Additional context
+
+Anything else that might help debug the issue.
