@@ -123,6 +123,21 @@ case "$CMD" in
     [ -n "$CONTEXT" ] && emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")" "SubagentStart"
     ;;
 
+  postcompact)
+    # PostCompact: 重新注入知识索引（compact 后 SessionStart 注入的内容已丢失）
+    CONTEXT=""
+    INDEX="$KG_DATA/knowledge-index.md"
+    if [ -f "$INDEX" ]; then
+      INDEX_CONTENT=$(cat "$INDEX" 2>/dev/null | head -50)
+      [ -n "$INDEX_CONTENT" ] && CONTEXT="[知识索引（compact 后重新注入）]\n$INDEX_CONTENT"
+    fi
+    if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
+      PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+      [ "$PENDING" -ge 5 ] && CONTEXT="$CONTEXT\n[知识图谱] 待分析活动：${PENDING} 条"
+    fi
+    [ -n "$CONTEXT" ] && emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")" "PostCompact"
+    ;;
+
 esac
 
 exit 0

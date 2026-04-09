@@ -114,6 +114,12 @@ HOOKS_JSON=$(cat << 'ENDJSON'
       "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/context.sh\" subagent", "timeout": 3}]
     }
   ],
+  "PostCompact": [
+    {
+      "matcher": "*",
+      "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/context.sh\" postcompact", "timeout": 5}]
+    }
+  ],
   "Stop": [
     {
       "matcher": "*",
@@ -148,15 +154,24 @@ else
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       | map(select(.hooks[]?.command | contains("inject-") | not) | select(.hooks[]?.command | contains("on-compact") | not)) + $h.SessionStart) |
         .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      | map(select(.hooks[]?.command | contains("inject-subagent") | not)) + $h.SubagentStart) |
         .hooks.Stop               = ((.hooks.Stop // [])               | map(select(.hooks[]?.command | contains("on-stop") | not)) + $h.Stop) |
+        .hooks.PostCompact        = ((.hooks.PostCompact // [])        | map(select(.hooks[]?.command | contains("context.sh") | not)) + $h.PostCompact) |
         .hooks.UserPromptSubmit   = ((.hooks.UserPromptSubmit // [])   | map(select(.hooks[]?.command | contains("prompt-trigger") | not)) + $h.UserPromptSubmit)
       ' > "$SETTINGS"
   elif echo "$EXISTING" | jq -e '.hooks.PostToolUse[]? | select(.hooks[]?.command | contains("knowledge-graph/scripts/track.sh"))' >/dev/null 2>&1; then
-    # Already installed — only patch missing UserPromptSubmit hook
+    # Already installed — patch missing hooks
+    PATCHED=false
     if ! echo "$EXISTING" | jq -e '.hooks.UserPromptSubmit[]? | select(.hooks[]?.command | contains("prompt-trigger"))' >/dev/null 2>&1; then
       info "补充 UserPromptSubmit hook..."
-      echo "$EXISTING" | jq \
-        --argjson h "$HOOKS_JSON" \
-        '.hooks.UserPromptSubmit = ((.hooks.UserPromptSubmit // []) + $h.UserPromptSubmit)' > "$SETTINGS"
+      EXISTING=$(echo "$EXISTING" | jq --argjson h "$HOOKS_JSON" '.hooks.UserPromptSubmit = ((.hooks.UserPromptSubmit // []) + $h.UserPromptSubmit)')
+      PATCHED=true
+    fi
+    if ! echo "$EXISTING" | jq -e '.hooks.PostCompact[]? | select(.hooks[]?.command | contains("context.sh"))' >/dev/null 2>&1; then
+      info "补充 PostCompact hook..."
+      EXISTING=$(echo "$EXISTING" | jq --argjson h "$HOOKS_JSON" '.hooks.PostCompact = ((.hooks.PostCompact // []) + $h.PostCompact)')
+      PATCHED=true
+    fi
+    if [ "$PATCHED" = true ]; then
+      echo "$EXISTING" > "$SETTINGS"
     else
       warn "检测到已安装的 hooks，跳过合并（如需重装请先删除 settings.json 中的 kg hooks）"
     fi
@@ -171,6 +186,7 @@ else
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       + $h.SessionStart) |
         .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      + $h.SubagentStart) |
         .hooks.Stop               = ((.hooks.Stop // [])               + $h.Stop) |
+        .hooks.PostCompact        = ((.hooks.PostCompact // [])        + $h.PostCompact) |
         .hooks.UserPromptSubmit   = ((.hooks.UserPromptSubmit // [])   + $h.UserPromptSubmit)
       ' > "$SETTINGS"
   fi

@@ -1,13 +1,13 @@
 ---
 name: knowledge-graph
 description: >
-  管理项目知识图谱（CLAUDE.md 节点）。以下情况触发 update：
-  1. hook 块中收到"【kg 自动指令】"消息；
-  2. 用户发出完成信号："整理一下"、"清理下"、"确认"、"ok了"、"可以了"、"搞定"、"行了"——说明一轮任务有阶段性成果，需固化知识；
-  3. 用户发出失败信号："还不行"、"不对"、"不行"、"又错了"——说明遇到问题，需记录教训到禁忌；
-  4. 用户说"更新/刷新知识图谱"、"图谱状态"、"有多少盲区"、提到 CLAUDE.md 覆盖率。
-  不要用于普通编码任务。
-  参数：init（首次全量扫描）/ update（增量刷新）/ status（健康检查）/ query（查询知识图谱）。
+  管理项目知识图谱（CLAUDE.md 节点）。维护模块知识、禁忌、依赖关系。
+  参数：init（首次全量扫描）/ update（增量刷新）/ status（健康检查）/ query（查询）。
+when_to_use: >
+  1. 收到"【kg 自动指令】"消息（hook 自动注入）；
+  2. 用户主动说"更新/刷新知识图谱"、"图谱状态"、"有多少盲区"；
+  3. 用户提到 CLAUDE.md 覆盖率、节点缺失、模块文档。
+  不要用于普通编码任务。完成/失败信号由 hook 自动处理，无需 skill 判断。
 argument-hint: [init|update|status|query <问题>]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 ---
