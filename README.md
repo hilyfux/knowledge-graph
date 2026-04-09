@@ -53,7 +53,7 @@ Claude Code is powerful, but stateless. Every new session starts from zero -- it
 
 ```bash
 # 1. Install (copies scripts to your project's .claude/ directory)
-bash <(curl -fsSL https://raw.githubusercontent.com/hilyfux/knowledge-graph/main/standalone/install.sh) /path/to/your-project
+bash <(curl -fsSL https://raw.githubusercontent.com/hilyfux/knowledge-graph/v1.0.0/standalone/install.sh) /path/to/your-project
 
 # 2. Restart Claude Code to activate hooks
 
@@ -64,8 +64,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/hilyfux/knowledge-graph/main
 That's it. From now on, Claude Code will:
 - Track every file write and edit automatically
 - Build knowledge nodes (`CLAUDE.md`) in each module
-- Inject relevant context at session start
+- Inject relevant context + knowledge index at session start
 - Auto-trigger updates every 15 file writes
+- Detect completion/failure signals in your messages and update knowledge accordingly
 
 ## Demo
 
@@ -113,8 +114,14 @@ That's it. From now on, Claude Code will:
               |
               v
   +-----------------------+
+  | Generates             |  knowledge-index.md updated
+  | knowledge-index.md    |  after every init/update
+  +-----------+-----------+
+              |
+              v
+  +-----------------------+
   | context.sh injects    |  Next session starts with
-  | knowledge at startup  |  full project awareness
+  | knowledge at startup  |  full project awareness + index
   +-----------------------+
 ```
 
@@ -125,9 +132,10 @@ That's it. From now on, Claude Code will:
 | `PostToolUse` (Write/Edit) | `track.sh` | Records file changes; auto-triggers update every 15 writes |
 | `PostToolUseFailure` | `track.sh` | Records failures + error messages as learning opportunities |
 | `InstructionsLoaded` | `track.sh` | Records which `CLAUDE.md` files Claude loaded |
-| `SessionStart` | `context.sh` | Injects knowledge summary + warns if events are piling up |
+| `SessionStart` | `context.sh` | Injects knowledge summary + knowledge index at startup |
 | `SubagentStart` | `context.sh` | Injects prohibitions into sub-agents |
 | `Stop` | `analyze.sh` | Runs background pre-analysis when 20+ events accumulated |
+| `UserPromptSubmit` | `prompt-trigger.sh` | Detects completion/failure signals in user messages, auto-triggers update |
 
 ---
 

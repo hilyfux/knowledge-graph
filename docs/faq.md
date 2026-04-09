@@ -42,6 +42,16 @@ Yes. Install it into each Claude Code project where you want persistent memory b
 
 The current packaging and workflow are optimized for Claude Code, though the underlying ideas apply more broadly to AI coding agents.
 
+## How does the query mode work?
+
+Run `/knowledge-graph query <your question>` to search the knowledge graph. It reads the `knowledge-index.md` to locate relevant modules, then reads their `CLAUDE.md` files and synthesizes an answer with sources. Useful for questions like "which module handles authentication?" or "what are the known pitfalls in the API layer?".
+
+## What triggers an automatic update?
+
+Two mechanisms:
+1. **Write threshold**: every 15 file writes, `track.sh` injects an auto-update instruction.
+2. **Prompt detection**: `prompt-trigger.sh` watches for completion signals ("搞定了", "ok了", "可以了", "整理一下") and failure signals ("还不行", "不对", "又错了") in your messages. When detected, it appends an instruction for Claude to run an update after finishing current work.
+
 ## What makes it different?
 
 The project combines:

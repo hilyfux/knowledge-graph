@@ -47,6 +47,21 @@ Typical contents include:
 
 The durable knowledge itself is written to `CLAUDE.md` files in your project and can be committed normally.
 
+## Prompt-triggered updates
+
+The `UserPromptSubmit` hook (`prompt-trigger.sh`) detects natural language signals in your messages:
+
+**Completion signals** (triggers update to solidify knowledge):
+`整理一下`, `清理下`, `确认`, `ok了`, `可以了`, `搞定了`, `行了`, `没问题了`, `完成了`
+
+**Failure signals** (triggers update to record lessons):
+`还不行`, `还是不行`, `不对`, `又错了`, `又报错了`, `仍然不行`, `没解决`
+
+Messages are filtered to avoid false triggers:
+- System messages (`<task-notification>`, `<system-reminder>`) are ignored
+- Messages shorter than 4 characters are ignored
+- Updates are skipped if fewer than 3 events have accumulated
+
 ## Update cadence
 
 By default, the workflow is designed around these thresholds:
