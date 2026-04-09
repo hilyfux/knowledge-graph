@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/hilyfux/knowledge-graph/blob/main/docs/installation.md
+    about: Check installation and usage docs before opening an issue.
