@@ -71,6 +71,12 @@ That's it. From now on, Claude Code will:
 
 > Demo GIF / terminal walkthrough coming soon. The intended flow is: install, restart Claude Code, run `/knowledge-graph init`, then watch `CLAUDE.md` knowledge nodes accumulate as hooks record real work across sessions.
 
+## Docs
+
+- [Installation Guide](docs/installation.md)
+- [Configuration Guide](docs/configuration.md)
+- [FAQ](docs/faq.md)
+
 ---
 
 ## How It Works
