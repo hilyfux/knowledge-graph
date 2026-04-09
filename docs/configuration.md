@@ -62,15 +62,43 @@ Messages are filtered to avoid false triggers:
 - Messages shorter than 4 characters are ignored
 - Updates are skipped if fewer than 3 events have accumulated
 
+## Predictive context loading
+
+The `PreToolUse(Read)` hook runs `infer.sh predict` when Claude reads a file. It checks the co-change history to find modules frequently modified alongside the current file's directory, then injects their prohibitions as `additionalContext`.
+
+This is automatic and requires no configuration. To see what the system predicts for a given file:
+
+```bash
+echo '{"file_path":"src/auth/login.ts"}' | bash .claude/skills/knowledge-graph/scripts/infer.sh predict
+```
+
+## Inference engine
+
+The inference engine (`infer.sh`) runs during `/knowledge-graph update` and provides four analysis commands:
+
+- `cochange` — files modified together within 10-minute windows
+- `sequences` — repeated read→write patterns revealing implicit dependencies
+- `decay` — evaluates each CLAUDE.md's rule effectiveness (effective / ineffective / stale)
+- `predict` — predicts related modules for a given file path
+
+All commands are pure bash + jq with zero LLM cost.
+
 ## Update cadence
 
 By default, the workflow is designed around these thresholds:
 
-- track every relevant file write or edit
+- track every file read, write, and edit
 - auto-trigger a knowledge refresh roughly every 15 writes
 - run background pre-analysis when enough events accumulate
+- run inference engine during each update (P6/P7/P8)
 
 These defaults aim to keep overhead low while still capturing evolving project context.
+
+## Context survival
+
+Knowledge index is included in `.claude/CLAUDE.md` via `@include` directive, making it part of the system prompt. This survives both `clear` and `compact` natively.
+
+A `PreCompact` hook guides the compactor to preserve prohibitions and error patterns during context compression.
 
 ## Team workflow
 

@@ -52,12 +52,29 @@ Two mechanisms:
 1. **Write threshold**: every 15 file writes, `track.sh` injects an auto-update instruction.
 2. **Prompt detection**: `prompt-trigger.sh` watches for completion signals ("搞定了", "ok了", "可以了", "整理一下") and failure signals ("还不行", "不对", "又错了") in your messages. When detected, it appends an instruction for Claude to run an update after finishing current work.
 
+## What is the inference engine?
+
+A pure bash + jq pattern mining system (`infer.sh`) that discovers implicit knowledge from event streams — zero LLM tokens consumed. It finds:
+- **Co-change patterns**: files modified together within 10-min windows
+- **Read→write sequences**: "every time X is changed, A and B are read first"
+- **Knowledge decay**: rules that are stale (30+ days inactive) or ineffective (failures continue despite prohibition)
+- **Predictive context**: given a file being read, predicts what modules will be needed next
+
+## Does it survive `clear` and `compact`?
+
+Yes. The knowledge index uses `@include` in `.claude/CLAUDE.md`, which is part of the system prompt and automatically rebuilt after clear/compact. Module CLAUDE.md files are lazily re-loaded when Claude accesses files in those directories. A PreCompact hook guides the compactor to preserve prohibitions and error patterns.
+
+## What is predictive context loading?
+
+When Claude reads a file, the `PreToolUse(Read)` hook checks co-change history and pre-loads related modules' prohibitions as `additionalContext`. Claude knows the pitfalls of `src/middleware/` while still reading `src/auth/` — before any error happens.
+
 ## What makes it different?
 
 The project combines:
 
-- Anthropic internal engineering workflow inspiration
-- Karpathy's AutoResearch-style knowledge building
-- Persistent memory beyond the context window
-- Zero-dependency shell-based implementation
-- Git-native, privacy-first local storage
+- **Inference engine** — discovers implicit dependencies from event streams (no other tool does this)
+- **Predictive loading** — pre-loads related knowledge before errors happen
+- **Knowledge self-healing** — stale rules detected, ineffective prohibitions rewritten automatically
+- **Context survival** — verified against Claude Code source code, not guesses
+- **Zero LLM cost for analysis** — bash does all data collection and pattern mining
+- **Git-native** — knowledge travels with code via `git push`
