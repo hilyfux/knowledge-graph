@@ -244,13 +244,13 @@ MCP_ARGS="[\"$SKILL_DST/scripts/mcp-server.sh\"]"
 if [ -f "$MCP_JSON" ]; then
   if ! jq -e '.mcpServers["knowledge-graph"]' "$MCP_JSON" >/dev/null 2>&1; then
     jq --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" \
-      '.mcpServers["knowledge-graph"] = {"command": $cmd, "args": $args}' \
+      '.mcpServers["knowledge-graph"] = {"type": "stdio", "command": $cmd, "args": $args}' \
       "$MCP_JSON" > "$MCP_JSON.tmp" && mv "$MCP_JSON.tmp" "$MCP_JSON"
     info "已在 .mcp.json 中注册 knowledge-graph MCP server"
   fi
 else
   jq -n --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" \
-    '{"mcpServers": {"knowledge-graph": {"command": $cmd, "args": $args}}}' > "$MCP_JSON"
+    '{"mcpServers": {"knowledge-graph": {"type": "stdio", "command": $cmd, "args": $args}}}' > "$MCP_JSON"
   info "已创建 .mcp.json 并注册 knowledge-graph MCP server"
 fi
 
