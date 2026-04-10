@@ -17,7 +17,7 @@ case "$CMD" in
   cochange)
     # Co-change 分析：哪些文件总是一起被修改？
     # 在同一个 10 分钟窗口内被修改的文件对 → 隐含依赖
-    jq -s '
+    jq -c '.' "$EVENTS" 2>/dev/null | jq -s '
       [.[] | select(.e | startswith("w"))] |
       sort_by(.t) |
       # 按 600 秒窗口分组
@@ -37,13 +37,13 @@ case "$CMD" in
         .[]
       ) | group_by(.) | map({pair: .[0], count: length}) |
       sort_by(-.count) | .[0:10]
-    ' "$EVENTS" 2>/dev/null || echo "[]"
+    ' 2>/dev/null || echo "[]"
     ;;
 
   sequences)
     # 序列模式挖掘：read A → read B → write C 的重复模式
     # 发现隐含的"前置知识"关系
-    jq -s '
+    jq -c '.' "$EVENTS" 2>/dev/null | jq -s '
       # 提取 read→write 序列（按时间排序，30 秒窗口内）
       [.[] | select(.e == "r" or .e | startswith("w"))] |
       sort_by(.t) |
@@ -70,48 +70,48 @@ case "$CMD" in
         count: length
       }) |
       sort_by(-.count) | map(select(.count >= 2)) | .[0:10]
-    ' "$EVENTS" 2>/dev/null || echo "[]"
+    ' 2>/dev/null || echo "[]"
     ;;
 
   decay)
     # 知识衰减检测：CLAUDE.md 中的规则是否仍然有效？
-    # 对比禁忌规则和该目录的失败事件
-    RESULTS="[]"
+    # 单次 jq 预计算所有目录统计，消除 N+1 查询
     NOW=$(date +%s)
-    THIRTY_DAYS=$((30 * 86400))
 
+    # Step 1: one jq pass to compute per-directory stats from all events
+    DIR_STATS=$(jq -c '.' "$EVENTS" 2>/dev/null | jq -s --argjson now "$NOW" '
+      [.[] | select(.p != null and .p != "")] |
+      group_by(.p | split("/") | if length > 1 then .[:-1] | join("/") else "." end) |
+      map({
+        dir: (.[0].p | split("/") | if length > 1 then .[:-1] | join("/") else "." end),
+        failures: [.[] | select(.e == "f")] | length,
+        writes: [.[] | select(.e | startswith("w"))] | length,
+        last_event: (map(.t) | max // 0),
+        days_silent: ((($now - (map(.t) | max // $now)) / 86400) | floor)
+      })
+    ' 2>/dev/null || echo "[]")
+
+    # Step 2: for each CLAUDE.md, look up pre-computed stats and assign status
+    RESULTS="[]"
     for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
       -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
       REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
       DIR=$(dirname "$REL")
       [ "$DIR" = "." ] && continue
 
-      # 统计该目录的事件
-      STATS=$(jq -s --arg dir "$DIR" --argjson now "$NOW" --argjson window "$THIRTY_DAYS" '
-        [.[] | select(.p != null) |
-          select((.p | split("/") | if length > 1 then .[:-1] | join("/") else "." end) == $dir)
-        ] |
-        {
-          total: length,
-          failures: [.[] | select(.e == "f")] | length,
-          writes: [.[] | select(.e | startswith("w"))] | length,
-          last_event: (map(.t) | max // 0),
-          days_silent: ((($now - (map(.t) | max // $now)) / 86400) | floor)
-        }
-      ' "$EVENTS" 2>/dev/null)
+      # Lookup from pre-computed stats (no jq -s on events, just a filter on cached result)
+      ENTRY=$(echo "$DIR_STATS" | jq --arg d "$DIR" '[.[] | select(.dir == $d)] | .[0] // {failures:0,writes:0,days_silent:0}')
+      DAYS_SILENT=$(echo "$ENTRY" | jq '.days_silent')
+      FAILURES=$(echo "$ENTRY" | jq '.failures')
+      WRITES=$(echo "$ENTRY" | jq '.writes')
 
-      DAYS_SILENT=$(echo "$STATS" | jq '.days_silent')
-      FAILURES=$(echo "$STATS" | jq '.failures')
-      WRITES=$(echo "$STATS" | jq '.writes')
-
-      # 判定状态
       STATUS="active"
       if [ "$DAYS_SILENT" -gt 30 ]; then
         STATUS="stale"
       elif [ "$FAILURES" -gt 0 ] && [ "$WRITES" -gt 3 ]; then
-        STATUS="ineffective"  # 有禁忌但仍然失败
+        STATUS="ineffective"
       elif [ "$FAILURES" -eq 0 ] && [ "$WRITES" -gt 2 ]; then
-        STATUS="effective"    # 有禁忌且零失败
+        STATUS="effective"
       fi
 
       RESULTS=$(echo "$RESULTS" | jq --arg dir "$DIR" --arg status "$STATUS" \
@@ -128,8 +128,8 @@ case "$CMD" in
     TARGET_DIR=$(cat | jq -r '.file_path // ""' 2>/dev/null | sed "s|^$CLAUDE_PROJECT_DIR/||" | xargs dirname 2>/dev/null)
     [ -z "$TARGET_DIR" ] && exit 0
 
-    # 从 co-change 数据找关联目录
-    jq -s --arg dir "$TARGET_DIR" '
+    # 从 co-change 数据找关联目录（只读最近 300 行，防止大文件超时）
+    tail -300 "$EVENTS" 2>/dev/null | jq -c '.' 2>/dev/null | jq -s --arg dir "$TARGET_DIR" '
       [.[] | select(.e | startswith("w"))] |
       sort_by(.t) |
       # 找同一 600 秒窗口内和 target_dir 一起出现的其他目录
@@ -149,7 +149,7 @@ case "$CMD" in
       ) | add // [] |
       group_by(.) | map({dir: .[0], freq: length}) |
       sort_by(-.freq) | .[0:5]
-    ' "$EVENTS" 2>/dev/null || echo "[]"
+    ' 2>/dev/null || echo "[]"
     ;;
 
 esac

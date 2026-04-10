@@ -12,13 +12,27 @@ CMD="${1:-quick-status}"
 case "$CMD" in
 
   stop)
-    # Stop hook: trigger background pre-analysis if events >= threshold
+    # Stop hook: save working state + background analysis
     [ ! -f "$EVENTS" ] && exit 0
     LINE_COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-    [ "$LINE_COUNT" -lt 20 ] && exit 0
-    env CLAUDE_PROJECT_DIR="$CLAUDE_PROJECT_DIR" \
-      timeout 15 bash "$SCRIPT_DIR/analyze.sh" analyze > /dev/null 2>&1 &
-    disown
+    [ "$LINE_COUNT" -lt 3 ] && exit 0
+
+    # Save snapshot (shared function from guard.sh)
+    save_snapshot
+
+    # Event rotation: keep recent 300 lines, archive the rest
+    if [ "$LINE_COUNT" -gt 500 ]; then
+      ARCHIVE="$KG_DATA/graph-events-archive.jsonl"
+      head -$((LINE_COUNT - 300)) "$EVENTS" >> "$ARCHIVE" 2>/dev/null
+      tail -300 "$EVENTS" > "$EVENTS.tmp" 2>/dev/null && mv "$EVENTS.tmp" "$EVENTS"
+    fi
+
+    # Background analysis if enough events
+    if [ "$LINE_COUNT" -ge 10 ]; then
+      env CLAUDE_PROJECT_DIR="$CLAUDE_PROJECT_DIR" \
+        timeout 15 bash "$SCRIPT_DIR/analyze.sh" analyze > /dev/null 2>&1 &
+      disown
+    fi
     ;;
 
   quick-status)

@@ -1,6 +1,6 @@
 #!/bin/bash
-# context.sh — SessionStart + SubagentStart context injection
-# Usage: context.sh <startup|resume|compact|subagent>
+# context.sh — Context injection for session lifecycle events
+# Usage: context.sh <startup|resume|compact|subagent|precompact|postcompact>
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/guard.sh"
 
@@ -12,36 +12,46 @@ case "$CMD" in
 
   startup)
     CONTEXT=""
-    # Clean up stale lock files
+    rm -f "$KG_DATA/.kg-updating" 2>/dev/null
     rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
-    # 知识索引已通过 @include 指令在 .claude/CLAUDE.md 中自动加载到系统提示词
-    # 无需 hook 重复注入，此处只注入动态信息（活跃区域、待分析事件）
+    # Reset working set + prediction cache for new session
+    > "$WS" 2>/dev/null
+    > "$PRED_CACHE" 2>/dev/null
 
-    # Not initialized: no events + no CLAUDE.md anywhere
-    if [ ! -f "$EVENTS" ]; then
-      if ! find "$CLAUDE_PROJECT_DIR" -maxdepth 3 -name "CLAUDE.md" \
-           -not -path "*/.git/*" 2>/dev/null | grep -q .; then
-        emit_hook_context "$(json_escape '[知识图谱] 此项目尚未初始化。执行 /knowledge-graph init 开始。')"
-        exit 0
-      fi
+    # Knowledge index loaded via @include in .claude/CLAUDE.md (always resident)
+
+    # Not initialized check (O(1) marker file instead of find scan)
+    if [ ! -f "$KG_DATA/.initialized" ] && [ ! -f "$EVENTS" ]; then
+      emit_hook_context "$(json_escape '[知识图谱] 此项目尚未初始化。执行 /knowledge-graph init 开始。')"
+      exit 0
     fi
 
-    # Pending events reminder
+    # Restore previous session state
+    SNAPSHOT="$KG_DATA/work-snapshot.md"
+    if [ -f "$SNAPSHOT" ]; then
+      SNAP_CONTENT=$(cat "$SNAPSHOT" 2>/dev/null)
+      [ -n "$SNAP_CONTENT" ] && CONTEXT="$CONTEXT\n$SNAP_CONTENT"
+    fi
+
+    # Smart update suggestion: only when stale + significant events
     if [ -f "$EVENTS" ]; then
       PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-      [ "$PENDING" -ge 10 ] && CONTEXT="$CONTEXT\n[知识图谱] 已积累 ${PENDING} 条未同步变更，建议运行 /knowledge-graph update"
+      INDEX="$KG_DATA/knowledge-index.md"
+      STALE=false
+      if [ -f "$INDEX" ]; then
+        LAST_MOD=$(stat -f %m "$INDEX" 2>/dev/null || stat -c %Y "$INDEX" 2>/dev/null || echo 0)
+        NOW_TS=$(date +%s)
+        [ $((NOW_TS - LAST_MOD)) -gt 3600 ] && [ "$PENDING" -ge 15 ] && STALE=true
+      else
+        [ "$PENDING" -ge 10 ] && STALE=true
+      fi
+      [ "$STALE" = true ] && CONTEXT="$CONTEXT\n[知识图谱] ${PENDING} 条变更待同步（上次更新超 1 小时），建议运行 /knowledge-graph update"
     fi
 
-    # Hot zones + broken refs from cached analysis
+    # Hot zones from cached analysis
     if [ -f "$ANALYSIS" ]; then
       HOT=$(jq -r '.dirs[:3][] | "  \(.w)次写入 \(.dir)"' "$ANALYSIS" 2>/dev/null)
-      BROKEN=$(jq -r '.broken_refs[]' "$ANALYSIS" 2>/dev/null)
-      [ -n "$HOT" ]    && CONTEXT="$CONTEXT\n[活跃区域]\n$HOT"
-      [ -n "$BROKEN" ] && CONTEXT="$CONTEXT\n[断裂引用]\n$BROKEN"
-    elif [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
-      HOT=$(tail -500 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
-        | xargs dirname 2>/dev/null | sort | uniq -c | sort -rn | head -3)
       [ -n "$HOT" ] && CONTEXT="$CONTEXT\n[活跃区域]\n$HOT"
     fi
 
@@ -58,56 +68,68 @@ case "$CMD" in
     [ ! -f "$EVENTS" ] && exit 0
     LINE_COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
     [ "$LINE_COUNT" -lt 1 ] && exit 0
-    emit_hook_context "$(json_escape "[知识图谱] 对话恢复。待分析活动：${LINE_COUNT} 条（可运行 /knowledge-graph update 刷新）")"
+    emit_hook_context "$(json_escape "[知识图谱] 对话恢复。待分析活动：${LINE_COUNT} 条")"
+    ;;
+
+  precompact)
+    # Save working state before compaction (dirty writeback)
+    save_snapshot
+
+    # Tell compactor what to preserve
+    WS_SUMMARY=""
+    if [ -f "$WS" ] && [ -s "$WS" ]; then
+      WS_DIRS=$(ws_top 3)
+      [ -n "$WS_DIRS" ] && WS_SUMMARY="活跃模块: $(echo "$WS_DIRS" | tr '\n' '、' | sed 's/、$//')"
+    fi
+    GUIDE="保留：${WS_SUMMARY:+$WS_SUMMARY; }模块禁忌(## 禁忌)、进行中任务、错误修复"
+    emit_hook_context "$(json_escape "$GUIDE")" "PreCompact"
     ;;
 
   compact)
-    CONTEXT="[上下文已压缩] 工作摘要："
-    if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
-      SUMMARY=$(tail -200 "$EVENTS" | jq -sr '
-        [.[] | select(.e | startswith("w")) | .p |
-          split("/") | if length > 1 then .[:-1] | join("/") else "." end] |
-        group_by(.) | map({dir: .[0], n: length}) | sort_by(-.n) | .[0:5][] |
-        "- \(.dir) (\(.n)次写入)"
-      ' 2>/dev/null)
-      [ -n "$SUMMARY" ] && CONTEXT="$CONTEXT\n\n活跃目录：\n$SUMMARY"
+    # Post-compact context rebuild: inject snapshot + working set rules
+    CONTEXT="[上下文已压缩] 工作状态恢复："
 
-      FAILS=$(tail -200 "$EVENTS" | jq -r 'select(.e == "f") | "- \(.tool): \(.err)"' \
-        2>/dev/null | sort -u | head -3)
-      [ -n "$FAILS" ] && CONTEXT="$CONTEXT\n\n近期失败：\n$FAILS"
-
-      ACTIVE_DIRS=$(tail -200 "$EVENTS" | jq -r \
-        'select(.e | startswith("w")) | .p | split("/") | if length > 1 then .[:-1] | join("/") else "." end' \
-        2>/dev/null | sort -u)
+    SNAPSHOT="$KG_DATA/work-snapshot.md"
+    if [ -f "$SNAPSHOT" ]; then
+      SNAP=$(cat "$SNAPSHOT" 2>/dev/null)
+      [ -n "$SNAP" ] && CONTEXT="$CONTEXT\n\n$SNAP"
     fi
 
-    if [ -n "$ACTIVE_DIRS" ]; then
-      while IFS= read -r cmd_file; do
-        REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
-        DIR=$(dirname "$REL")
-        if echo "$ACTIVE_DIRS" | grep -q "^$DIR$"; then
-          RULES=$(sed -n '/^## 禁忌/,/^## /{ /^## /d; /^$/d; p; }' "$cmd_file" 2>/dev/null | head -5)
-          [ -n "$RULES" ] && CONTEXT="$CONTEXT\n\n$DIR 禁忌：\n$RULES"
-        fi
-      done < <(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
-        -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -10)
+    WS_RULES=$(inject_working_set_rules 5)
+    [ -n "$WS_RULES" ] && CONTEXT="$CONTEXT\n\n[工作集禁忌]$WS_RULES"
+
+    if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
+      FAILS=$(tail -100 "$EVENTS" | jq -r 'select(.e == "f") | "- \(.tool): \(.err)"' \
+        2>/dev/null | sort -u | head -3)
+      [ -n "$FAILS" ] && CONTEXT="$CONTEXT\n\n[近期失败]\n$FAILS"
     fi
 
     if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir &>/dev/null; then
       COMMITS=$(git -C "$CLAUDE_PROJECT_DIR" log --oneline -3 --since="2 hours ago" 2>/dev/null)
-      [ -n "$COMMITS" ] && CONTEXT="$CONTEXT\n\n会话提交：\n$COMMITS"
+      [ -n "$COMMITS" ] && CONTEXT="$CONTEXT\n\n[会话提交]\n$COMMITS"
     fi
 
     emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")"
+    ;;
+
+  postcompact)
+    if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
+      PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+      [ "$PENDING" -ge 5 ] && emit_hook_context "$(json_escape "[知识图谱] 待分析：${PENDING} 条")" "PostCompact"
+    fi
     ;;
 
   subagent)
     CONTEXT=""
     ROOT_CLAUDE="$CLAUDE_PROJECT_DIR/CLAUDE.md"
     if [ -f "$ROOT_CLAUDE" ]; then
-      PROHIBITIONS=$(sed -n '/^## 禁忌/,/^## /{ /^## 禁忌/d; /^## /d; p; }' \
-        "$ROOT_CLAUDE" 2>/dev/null | head -10)
+      PROHIBITIONS=$(get_prohibitions "$ROOT_CLAUDE" 10)
       [ -n "$PROHIBITIONS" ] && CONTEXT="[项目禁忌]\n$PROHIBITIONS"
+    fi
+
+    if [ -f "$WS" ] && [ -s "$WS" ]; then
+      WS_DIRS=$(ws_top 3)
+      [ -n "$WS_DIRS" ] && CONTEXT="$CONTEXT\n[主会话活跃模块] $(echo "$WS_DIRS" | tr '\n' '、' | sed 's/、$//')"
     fi
 
     if [ -f "$ANALYSIS" ]; then
@@ -117,20 +139,6 @@ case "$CMD" in
     fi
 
     [ -n "$CONTEXT" ] && emit_hook_context "$(json_escape "$(echo -e "$CONTEXT")")" "SubagentStart"
-    ;;
-
-  precompact)
-    # PreCompact: 注入指令引导压缩器保留知识图谱关键信息
-    GUIDE="压缩时请保留：1)每个模块的禁忌规则（## 禁忌段落）2)当前进行中的任务和文件路径 3)已发现的错误模式和修复方案。这些信息来自项目知识图谱，丢失后需重新学习。"
-    emit_hook_context "$(json_escape "$GUIDE")" "PreCompact"
-    ;;
-
-  postcompact)
-    # PostCompact: 补充注入待分析活动提醒（知识索引已通过 @include 自动存活）
-    if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
-      PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-      [ "$PENDING" -ge 5 ] && emit_hook_context "$(json_escape "[知识图谱] 待分析活动：${PENDING} 条")" "PostCompact"
-    fi
     ;;
 
 esac

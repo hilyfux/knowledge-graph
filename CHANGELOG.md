@@ -6,6 +6,62 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-10
+
+### Added — Zero-Interrupt Architecture
+
+Complete redesign of when and how the system interacts with your coding session:
+
+- **Removed all mid-coding interrupts.** The old system blocked Claude every 15 writes to force a knowledge update. This is gone. You code uninterrupted; the system works at session boundaries.
+- **Work Snapshot system.** On session end (Stop hook) and before compaction (PreCompact), the system saves a structured snapshot of your working state — which modules you touched, what you modified, errors you hit, commits you made. This snapshot is injected on next `SessionStart` or after `compact`, so Claude knows what you were doing even after `clear`.
+- **Working Set tracking.** Every module directory you read or write is recorded in a session-scoped working set (`working-set.dat`). This is the authoritative record of "what's paged in" — used for prediction deduplication, compact recovery, and subagent context.
+- **Prediction Cache (TLB).** Predicted module relations are cached per-directory with a 300-second TTL. Same-directory reads no longer re-run the prediction engine — first access triggers prediction, subsequent accesses cost ~5ms.
+
+### Added — Pipeline Resilience
+
+- **Event file rotation.** `graph-events.jsonl` is automatically truncated to 300 lines on session end (when exceeding 500 lines). Older events are archived to `graph-events-archive.jsonl`. The system no longer degrades as events accumulate.
+- **Corrupt line tolerance.** All inference commands now filter malformed JSON lines before processing. A single corrupted event line no longer crashes the entire inference pipeline.
+- **Bounded prediction input.** `infer.sh predict` reads only the most recent 300 events (`tail -300`), regardless of file size. Prediction latency is bounded.
+- **N+1 query elimination.** `infer.sh decay` was rewritten from N separate full-file scans (one per module) to a single pre-computation pass + per-module lookup. 20 modules went from 20 full parses to 1.
+
+### Added — MCP Server
+
+- New `mcp-server.sh`: a bash-native MCP stdio server exposing 4 tools: `kg_status`, `kg_query`, `kg_predict`, `kg_cochange`. Registered automatically during install.
+
+### Added — Plugin Packaging
+
+- New `plugin.json`: standard Claude Code plugin manifest with hooks, skills, and MCP server definitions.
+
+### Added — Multilingual Support
+
+- `get_prohibitions()` now matches `## 禁忌`, `## Prohibitions`, `## Rules`, and `## Constraints` headings. English-language projects work out of the box.
+
+### Added — Testing
+
+- `tests/test-pipeline.sh`: 15 automated tests covering prediction performance, corrupt line resilience, event rotation, multilingual heading extraction, and initialization marker detection.
+- Initialization detection changed from `find` scan (O(n) on large repos) to `.initialized` marker file (O(1)).
+
+### Changed — Trigger Timing
+
+- **`track.sh write`**: no longer outputs `"decision":"block"`. Events are silently accumulated; updates happen at session boundaries.
+- **`prompt-trigger.sh`**: no longer scans every user message for completion/failure signals. Only responds when user explicitly mentions "知识图谱" or "knowledge-graph".
+- **`context.sh startup`**: update suggestion only appears when knowledge index is >1 hour stale AND ≥15 events pending. Previously suggested at ≥10 events regardless of staleness.
+- **`context.sh compact`**: now uses working set to inject only the active modules' prohibitions, instead of scanning event tails to guess which modules matter.
+
+### Changed — Context Injection
+
+- **SessionStart** now injects the previous session's work snapshot (modules, modifications, errors, commits) — the key to making `clear` non-destructive.
+- **PreCompact** now saves a work snapshot before compaction and tells the compactor which specific modules to preserve (by name, not generic guidance).
+- **PostCompact** rebuilds context from the saved snapshot + working set prohibitions, instead of generic event summaries.
+- **SubagentStart** now includes the main session's active modules, so subagents know what the parent is working on.
+
+### Fixed
+
+- `guard.sh`: `mkdir -p` replaced with `[ -d ] || mkdir -p` to avoid unnecessary fork on every hook invocation.
+- `tlb_invalidate`: added empty-file guard (`[ ! -s ]`) to skip awk+mv when prediction cache is empty.
+- `mcp-server.sh`: all JSON construction uses `jq --arg` for proper escaping; removed unsafe `sed`/`tr` string interpolation.
+- `install.sh`: MCP server registration added to `.mcp.json` during install.
+
 ## [1.1.1] - 2026-04-10
 
 ### Changed

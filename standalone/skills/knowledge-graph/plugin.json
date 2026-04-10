@@ -1,0 +1,74 @@
+{
+  "name": "knowledge-graph",
+  "version": "1.2.0",
+  "description": "Persistent knowledge graph for Claude Code — tracks file operations, mines co-change patterns, generates distributed CLAUDE.md knowledge nodes",
+  "homepage": "https://github.com/hilyfux/knowledge-graph",
+  "skills": [
+    "SKILL.md"
+  ],
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "command": "bash \"${PLUGIN_DIR}/scripts/track.sh\" read",
+        "timeout": 3000
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "command": "bash \"${PLUGIN_DIR}/scripts/track.sh\" write",
+        "timeout": 3000
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "command": "bash \"${PLUGIN_DIR}/scripts/track.sh\" failure",
+        "timeout": 2000
+      }
+    ],
+    "InstructionsLoaded": [
+      {
+        "command": "bash \"${PLUGIN_DIR}/scripts/track.sh\" instructions",
+        "timeout": 2000
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "bash \"${PLUGIN_DIR}/scripts/context.sh\" startup",
+        "timeout": 5000
+      }
+    ],
+    "PreCompact": [
+      {
+        "command": "bash \"${PLUGIN_DIR}/scripts/context.sh\" precompact",
+        "timeout": 2000
+      }
+    ],
+    "PostCompact": [
+      {
+        "command": "bash \"${PLUGIN_DIR}/scripts/context.sh\" postcompact",
+        "timeout": 2000
+      }
+    ],
+    "SubagentStart": [
+      {
+        "command": "bash \"${PLUGIN_DIR}/scripts/context.sh\" subagent",
+        "timeout": 3000
+      }
+    ],
+    "Stop": [
+      {
+        "command": "bash \"${PLUGIN_DIR}/scripts/analyze.sh\" stop",
+        "timeout": 2000
+      }
+    ]
+  },
+  "mcp": {
+    "knowledge-graph": {
+      "command": "bash",
+      "args": ["${PLUGIN_DIR}/scripts/mcp-server.sh"],
+      "env": {}
+    }
+  }
+}
