@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-04-10
+
+### Changed
+- **Runtime data moved from `.claude/skills/knowledge-graph/data/` to `.knowledge-graph/`** at project root. Files under `.claude/` require user authorization on every modification — hooks writing event logs caused constant permission prompts. The new location is outside `.claude/` and operates silently.
+- Install script auto-migrates existing data from old location to `.knowledge-graph/`.
+- `@include` path in `.claude/CLAUDE.md` updated to `@.knowledge-graph/knowledge-index.md`.
+- `.gitignore` updated to ignore `.knowledge-graph/` instead of old data path.
+
 ## [1.1.0] - 2026-04-09
 
 ### Added — Inference Engine (pure bash + jq, zero LLM cost)

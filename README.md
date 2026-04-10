@@ -87,7 +87,7 @@ Claude Code is powerful, but stateless. Every new session starts from zero. Know
 
 ```bash
 # 1. Install
-bash <(curl -fsSL https://raw.githubusercontent.com/hilyfux/knowledge-graph/v1.1.0/standalone/install.sh) /path/to/your-project
+bash <(curl -fsSL https://raw.githubusercontent.com/hilyfux/knowledge-graph/v1.1.1/standalone/install.sh) /path/to/your-project
 
 # 2. Restart Claude Code to activate hooks
 
@@ -223,7 +223,7 @@ The `@` references create a dependency graph. The inference engine automatically
 | Module CLAUDE.md | Re-loaded on access | Cache cleared, re-loaded | Native nested traversal |
 | Active zones | Re-injected | Re-injected | SessionStart + PostCompact hooks |
 | Prohibitions | Always available | Guided preservation | PreCompact hook |
-| Event data | On disk | On disk | Never enters context window |
+| Event data | On disk | On disk | `.knowledge-graph/` — never enters context window |
 
 ---
 
@@ -246,7 +246,7 @@ The `@` references create a dependency graph. The inference engine automatically
 ## Project Structure
 
 ```
-knowledge-graph/
+knowledge-graph/                       <- Source repo
 ├── standalone/
 │   ├── install.sh
 │   └── skills/
@@ -265,6 +265,26 @@ knowledge-graph/
 │   ├── installation.md
 │   └── faq.md
 └── examples/
+```
+
+**After installation in your project:**
+
+```
+your-project/
+├── .knowledge-graph/                  <- Runtime data (gitignored, no auth prompts)
+│   ├── graph-events.jsonl             <- Event log
+│   ├── graph-analysis.json            <- Analysis cache (temporary)
+│   └── knowledge-index.md            <- Global knowledge index
+├── .claude/
+│   ├── CLAUDE.md                      <- @include → .knowledge-graph/knowledge-index.md
+│   ├── settings.json                  <- Hooks auto-merged
+│   ├── rules/                         <- Cross-module rules
+│   └── skills/knowledge-graph/        <- Scripts only (no data)
+├── src/
+│   ├── auth/CLAUDE.md                 <- Module knowledge (committed)
+│   ├── api/CLAUDE.md
+│   └── ...
+└── CLAUDE.md                          <- Root project knowledge
 ```
 
 ---
