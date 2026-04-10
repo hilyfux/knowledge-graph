@@ -79,6 +79,10 @@ Claude Code is powerful, but stateless. Every new session starts from zero. Know
 
 ---
 
+## Demo
+
+> Demo GIF coming soon: a short walkthrough showing hook capture, predictive context loading, and `CLAUDE.md` knowledge synthesis in a real repo.
+
 ## Quick Start
 
 ```bash
