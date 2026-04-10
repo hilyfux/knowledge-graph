@@ -1,0 +1,21 @@
+{
+  "name": "knowledge-graph",
+  "description": "Persistent memory layer for Claude Code — tracks file operations, mines co-change patterns, generates distributed CLAUDE.md knowledge nodes. Zero dependencies beyond jq.",
+  "version": "1.2.0",
+  "author": {
+    "name": "hilyfux",
+    "email": "hilyfux@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/hilyfux/knowledge-graph",
+  "repository": "https://github.com/hilyfux/knowledge-graph",
+  "license": "MIT",
+  "keywords": [
+    "memory",
+    "knowledge-graph",
+    "persistent",
+    "context-recovery",
+    "hooks",
+    "mcp",
+    "claude-code"
+  ]
+}

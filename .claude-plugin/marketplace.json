@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "hilyfux-knowledge-graph",
+  "description": "Persistent memory layer for Claude Code with zero-interrupt architecture",
+  "owner": {
+    "name": "hilyfux",
+    "email": "hilyfux@users.noreply.github.com"
+  },
+  "plugins": [
+    {
+      "name": "knowledge-graph",
+      "description": "Persistent memory that makes Claude Code smarter with every session — tracks file operations, mines co-change patterns, predicts related modules, survives clear/compact. Zero dependencies beyond jq.",
+      "version": "1.2.0",
+      "source": "./",
+      "author": {
+        "name": "hilyfux",
+        "email": "hilyfux@users.noreply.github.com"
+      }
+    }
+  ]
+}
