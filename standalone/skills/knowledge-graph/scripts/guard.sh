@@ -4,7 +4,7 @@
 [ "$CLAUDE_PROJECT_DIR" = "$HOME" ] && exit 0
 [ "$CLAUDE_PROJECT_DIR" = "/" ] && exit 0
 
-KG_DATA="$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/data"
+KG_DATA="$CLAUDE_PROJECT_DIR/.knowledge-graph"
 mkdir -p "$KG_DATA"
 
 json_escape() { printf '%s' "$1" | jq -Rs .; }

@@ -204,13 +204,29 @@ else
   fi
 fi
 
-# ── Init data file ─────────────────────────────────────────────────────────────
-touch "$SKILL_DST/data/graph-events.jsonl"
+# ── Init data directory ────────────────────────────────────────────────────────
+KG_DATA_DIR="$TARGET/.knowledge-graph"
+mkdir -p "$KG_DATA_DIR"
+touch "$KG_DATA_DIR/graph-events.jsonl"
+
+# Migrate data from old location (.claude/skills/knowledge-graph/data/)
+OLD_DATA="$SKILL_DST/data"
+if [ -d "$OLD_DATA" ] && [ -f "$OLD_DATA/graph-events.jsonl" ]; then
+  info "迁移数据从 .claude/.../data/ → .knowledge-graph/"
+  for f in "$OLD_DATA"/*; do
+    [ -f "$f" ] && mv "$f" "$KG_DATA_DIR/" 2>/dev/null
+  done
+  rmdir "$OLD_DATA" 2>/dev/null
+fi
 
 # ── Setup @include in .claude/CLAUDE.md ───────────────────────────────────────
-INCLUDE_LINE="@.claude/skills/knowledge-graph/data/knowledge-index.md"
+INCLUDE_LINE="@.knowledge-graph/knowledge-index.md"
+OLD_INCLUDE="@.claude/skills/knowledge-graph/data/knowledge-index.md"
 DOT_CLAUDE_MD="$TARGET/.claude/CLAUDE.md"
 if [ -f "$DOT_CLAUDE_MD" ]; then
+  # 清理旧的 @include
+  grep -qF "$OLD_INCLUDE" "$DOT_CLAUDE_MD" && \
+    sed -i '' "s|$OLD_INCLUDE|$INCLUDE_LINE|g" "$DOT_CLAUDE_MD" 2>/dev/null
   if ! grep -qF "$INCLUDE_LINE" "$DOT_CLAUDE_MD"; then
     echo "" >> "$DOT_CLAUDE_MD"
     echo "$INCLUDE_LINE" >> "$DOT_CLAUDE_MD"
@@ -223,9 +239,15 @@ fi
 
 # ── Update .gitignore ──────────────────────────────────────────────────────────
 GITIGNORE="$TARGET/.gitignore"
-if [ -f "$GITIGNORE" ] && ! grep -q "knowledge-graph/data" "$GITIGNORE"; then
-  echo ".claude/skills/knowledge-graph/data/" >> "$GITIGNORE"
-  info "已添加 data/ 到 .gitignore"
+if [ -f "$GITIGNORE" ]; then
+  # 添加新路径
+  grep -q "^\.knowledge-graph/" "$GITIGNORE" || echo ".knowledge-graph/" >> "$GITIGNORE"
+  # 清理旧路径
+  grep -q "knowledge-graph/data" "$GITIGNORE" || true
+  info "已更新 .gitignore"
+else
+  echo ".knowledge-graph/" > "$GITIGNORE"
+  info "已创建 .gitignore"
 fi
 
 # ── Done ───────────────────────────────────────────────────────────────────────
