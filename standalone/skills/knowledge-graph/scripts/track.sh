@@ -54,17 +54,7 @@ case "$CMD" in
     if [ ! -f "$UPDATE_MARKER" ] && [ -f "$KG_DATA/.initialized" ]; then
       if [ "$TARGET_DIR" != "." ] && [ ! -f "$CLAUDE_PROJECT_DIR/$TARGET_DIR/CLAUDE.md" ]; then
         touch "$UPDATE_MARKER" 2>/dev/null
-        printf '{"decision":"block","reason":"BLOCKED: Module %s has no CLAUDE.md. Run: Skill tool, skill=knowledge-graph, args=update. Then retry."}\n' "$TARGET_DIR"
-        exit 0
-      fi
-    fi
-
-    # Also trigger after significant accumulation (every 30 writes without update)
-    if [ -f "$KG_DATA/.initialized" ] && [ -f "$EVENTS" ]; then
-      WRITE_COUNT=$(grep -c '"w:' "$EVENTS" 2>/dev/null || echo 0)
-      if [ "$WRITE_COUNT" -ge 30 ] && [ ! -f "$UPDATE_MARKER" ]; then
-        touch "$UPDATE_MARKER" 2>/dev/null
-        printf '{"decision":"block","reason":"BLOCKED: %d code changes since last knowledge update. Run: Skill tool, skill=knowledge-graph, args=update. Then retry."}\n' "$WRITE_COUNT"
+        printf '{"decision":"block","reason":"Write paused. Module %s/ needs a knowledge node before modification. You MUST call: Skill(skill=\\\"knowledge-graph\\\", args=\\\"update\\\") — do NOT create CLAUDE.md directly, the skill analyzes code+history for accurate rules. After skill completes, retry this write."}\n' "$TARGET_DIR"
         exit 0
       fi
     fi
