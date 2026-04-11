@@ -21,9 +21,9 @@ case "$CMD" in
 
     # Knowledge index loaded via @include in .claude/CLAUDE.md (always resident)
 
-    # Not initialized check (O(1) marker file instead of find scan)
-    if [ ! -f "$KG_DATA/.initialized" ] && [ ! -f "$EVENTS" ]; then
-      emit_hook_context "$(json_escape '[知识图谱] 此项目尚未初始化。执行 /knowledge-graph init 开始。')"
+    # Auto-init: if never initialized, trigger init on first session
+    if [ ! -f "$KG_DATA/.initialized" ]; then
+      emit_hook_context "$(json_escape '[kg auto-trigger] This project has not been initialized. Run knowledge-graph init now: invoke Skill tool (skill: knowledge-graph, args: init). After init completes, continue with the user task.')"
       exit 0
     fi
 
