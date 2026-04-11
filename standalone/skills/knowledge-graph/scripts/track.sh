@@ -35,9 +35,9 @@ case "$CMD" in
       Edit)  echo "{\"e\":\"w:edit\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS" 2>/dev/null ;;
     esac
 
-    # Update working set + invalidate prediction cache
+    # Update working set (no cache invalidation — editing current dir
+    # doesn't change its relationship to other dirs)
     ws_touch "$TS" "$TARGET_DIR" "w"
-    tlb_invalidate "$TARGET_DIR"
     ;;
 
   read)
