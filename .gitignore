@@ -5,3 +5,6 @@
 docs/superpowers/plans/
 .claude/
 standalone/skills/knowledge-graph/data/
+.knowledge-graph/
+.mcp.json
+.playwright-mcp/
