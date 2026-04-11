@@ -54,7 +54,21 @@ case "$CMD" in
     if [ ! -f "$UPDATE_MARKER" ] && [ -f "$KG_DATA/.initialized" ]; then
       if [ "$TARGET_DIR" != "." ] && [ ! -f "$CLAUDE_PROJECT_DIR/$TARGET_DIR/CLAUDE.md" ]; then
         touch "$UPDATE_MARKER" 2>/dev/null
-        printf '{"decision":"block","reason":"Write paused. Module %s/ needs a knowledge node before modification. You MUST call: Skill(skill=\\\"knowledge-graph\\\", args=\\\"update\\\") — do NOT create CLAUDE.md directly, the skill analyzes code+history for accurate rules. After skill completes, retry this write."}\n' "$TARGET_DIR"
+
+        # Assess module complexity from event history
+        DIR_WRITES=0; DIR_FAILS=0
+        if [ -f "$EVENTS" ]; then
+          DIR_WRITES=$(jq -r --arg d "$TARGET_DIR" 'select((.e | startswith("w")) and (.p | startswith($d+"/")))' "$EVENTS" 2>/dev/null | wc -l | tr -d ' ')
+          DIR_FAILS=$(jq -r --arg d "$TARGET_DIR" 'select(.e == "f" and ((.p // "") | startswith($d+"/")))' "$EVENTS" 2>/dev/null | wc -l | tr -d ' ')
+        fi
+
+        if [ "$DIR_WRITES" -ge 5 ] || [ "$DIR_FAILS" -ge 1 ]; then
+          # Complex module: has significant history or failures → use skill for deep analysis
+          printf '{"decision":"block","reason":"Write paused. Module %s/ has significant activity (%s writes, %s failures) but no CLAUDE.md. Call Skill(skill=\\\"knowledge-graph\\\", args=\\\"update\\\") for code+history analysis. Then retry."}\n' "$TARGET_DIR" "$DIR_WRITES" "$DIR_FAILS"
+        else
+          # Simple module: new/minimal history → direct write with format template
+          printf '{"decision":"block","reason":"Write paused. Module %s/ needs CLAUDE.md (max 20 lines). Create it now:\\n# %s\\n## Prohibitions\\n- {behavior} → {consequence}\\n## When Changing\\n- {condition} → @{path}/CLAUDE.md\\n## Conventions\\n- {rule}\\nEvidence-only, no guesses. Also add one-line entry to .knowledge-graph/knowledge-index.md. Then retry."}\n' "$TARGET_DIR" "$(basename "$TARGET_DIR")"
+        fi
         exit 0
       fi
     fi
