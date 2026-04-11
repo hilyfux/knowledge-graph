@@ -26,6 +26,8 @@ emit_hook_context() {
 # ── Working Set ───────────────────────────────────────────────────────────────
 
 ws_touch() {
+  # Skip absolute paths (cross-project files that leaked past guards)
+  case "$2" in /*) return ;; esac
   printf '%s\t%s\t%s\n' "$1" "$2" "${3:-r}" >> "$WS" 2>/dev/null
 }
 

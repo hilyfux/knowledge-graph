@@ -128,11 +128,10 @@ case "$CMD" in
     TARGET_DIR=$(cat | jq -r '.file_path // ""' 2>/dev/null | sed "s|^$CLAUDE_PROJECT_DIR/||" | xargs dirname 2>/dev/null)
     [ -z "$TARGET_DIR" ] && exit 0
 
-    # 从 co-change 数据找关联目录（只读最近 300 行，防止大文件超时）
-    tail -300 "$EVENTS" 2>/dev/null | jq -c '.' 2>/dev/null | jq -s --arg dir "$TARGET_DIR" '
+    # Primary: predict from event history (recent 300 lines)
+    RESULT=$(tail -300 "$EVENTS" 2>/dev/null | jq -c '.' 2>/dev/null | jq -s --arg dir "$TARGET_DIR" '
       [.[] | select(.e | startswith("w"))] |
       sort_by(.t) |
-      # 找同一 600 秒窗口内和 target_dir 一起出现的其他目录
       reduce .[] as $ev (
         {windows: [], current: [], last_t: 0};
         if ($ev.t - .last_t) > 600 and (.current | length) > 0
@@ -140,7 +139,6 @@ case "$CMD" in
         else {windows: .windows, current: (.current + [$ev]), last_t: $ev.t}
         end
       ) | .windows + [.current] |
-      # 只看包含 target_dir 的窗口
       map(
         . as $w |
         [.[] | .p | split("/") | if length > 1 then .[:-1] | join("/") else "." end] | unique |
@@ -149,7 +147,19 @@ case "$CMD" in
       ) | add // [] |
       group_by(.) | map({dir: .[0], freq: length}) |
       sort_by(-.freq) | .[0:5]
-    ' 2>/dev/null || echo "[]"
+    ' 2>/dev/null || echo "[]")
+
+    # Fallback: if events too sparse, use git co-change history
+    if [ "$RESULT" = "[]" ] || [ "$RESULT" = "null" ] || [ -z "$RESULT" ]; then
+      if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir &>/dev/null; then
+        RESULT=$(git -C "$CLAUDE_PROJECT_DIR" log --pretty=format: --name-only -30 2>/dev/null \
+          | grep -v '^$' | xargs -I{} dirname {} 2>/dev/null | sort | uniq -c | sort -rn \
+          | awk -v d="$TARGET_DIR" '$2 != d && $2 != "." {printf "{\"dir\":\"%s\",\"freq\":%d}\n", $2, $1}' \
+          | head -5 | jq -s '.' 2>/dev/null || echo "[]")
+      fi
+    fi
+
+    echo "$RESULT"
     ;;
 
 esac
