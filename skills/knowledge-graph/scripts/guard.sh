@@ -31,10 +31,11 @@ ws_touch() {
   printf '%s\t%s\t%s\n' "$1" "$2" "${3:-r}" >> "$WS" 2>/dev/null
 }
 
-# Returns 0 if module was accessed before in this session
+# Returns 0 if module was READ before in this session (writes don't count —
+# writing to a dir doesn't mean you know its related modules)
 ws_is_paged_in() {
   [ ! -f "$WS" ] && return 1
-  awk -F'\t' -v d="$1" '$2 == d {found=1; exit} END {exit !found}' "$WS" 2>/dev/null
+  awk -F'\t' -v d="$1" '$2 == d && $3 == "r" {found=1; exit} END {exit !found}' "$WS" 2>/dev/null
 }
 
 ws_top() {
