@@ -80,6 +80,10 @@ HOOKS_JSON=$(cat << 'ENDJSON'
     {
       "matcher": "Read",
       "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/track.sh\" read", "timeout": 3}]
+    },
+    {
+      "matcher": "Write|Edit",
+      "hooks": [{"type": "command", "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/track.sh\" pre-write", "timeout": 3}]
     }
   ],
   "PostToolUse": [

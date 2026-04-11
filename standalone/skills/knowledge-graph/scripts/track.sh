@@ -37,15 +37,34 @@ case "$CMD" in
 
     # Update working set
     ws_touch "$TS" "$TARGET_DIR" "w"
+    ;;
 
-    # After writes accumulate: check if this module needs CLAUDE.md
-    # One-time per session, triggers on first write to a dir without CLAUDE.md
+  pre-write)
+    # PreToolUse: Write|Edit — block if module needs CLAUDE.md
+    # Must be PreToolUse (not PostToolUse) for decision:block to work
+    INPUT=$(cat)
+    FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
+    [ -z "$FILE_PATH" ] && exit 0
+    is_project_file "$FILE_PATH" || exit 0
+
+    TARGET_DIR=$(dirname "${FILE_PATH#$PREFIX}")
     UPDATE_MARKER="$KG_DATA/.update-triggered"
+
+    # One-time per session: block if writing to module without CLAUDE.md
     if [ ! -f "$UPDATE_MARKER" ] && [ -f "$KG_DATA/.initialized" ]; then
-      if [ ! -f "$CLAUDE_PROJECT_DIR/$TARGET_DIR/CLAUDE.md" ] && [ "$TARGET_DIR" != "." ]; then
+      if [ "$TARGET_DIR" != "." ] && [ ! -f "$CLAUDE_PROJECT_DIR/$TARGET_DIR/CLAUDE.md" ]; then
         touch "$UPDATE_MARKER" 2>/dev/null
-        PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-        printf '{"decision":"block","reason":"BLOCKED: Module %s has no CLAUDE.md knowledge node (%s events pending). Run: Skill tool, skill=knowledge-graph, args=update. Then retry."}\n' "$TARGET_DIR" "$PENDING"
+        printf '{"decision":"block","reason":"BLOCKED: Module %s has no CLAUDE.md. Run: Skill tool, skill=knowledge-graph, args=update. Then retry."}\n' "$TARGET_DIR"
+        exit 0
+      fi
+    fi
+
+    # Also trigger after significant accumulation (every 30 writes without update)
+    if [ -f "$KG_DATA/.initialized" ] && [ -f "$EVENTS" ]; then
+      WRITE_COUNT=$(grep -c '"w:' "$EVENTS" 2>/dev/null || echo 0)
+      if [ "$WRITE_COUNT" -ge 30 ] && [ ! -f "$UPDATE_MARKER" ]; then
+        touch "$UPDATE_MARKER" 2>/dev/null
+        printf '{"decision":"block","reason":"BLOCKED: %d code changes since last knowledge update. Run: Skill tool, skill=knowledge-graph, args=update. Then retry."}\n' "$WRITE_COUNT"
         exit 0
       fi
     fi
