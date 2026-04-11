@@ -18,7 +18,7 @@ case "$CMD" in
     # Reset session-scoped state
     > "$WS" 2>/dev/null
     > "$PRED_CACHE" 2>/dev/null
-    rm -f "$KG_DATA/.trigger-checked" 2>/dev/null
+    rm -f "$KG_DATA/.trigger-checked" "$KG_DATA/.update-triggered" 2>/dev/null
 
     # Knowledge index loaded via @include in .claude/CLAUDE.md (always resident)
 

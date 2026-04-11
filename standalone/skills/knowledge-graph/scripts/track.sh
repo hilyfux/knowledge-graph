@@ -52,6 +52,26 @@ case "$CMD" in
     # Record event
     echo "{\"e\":\"r\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS" 2>/dev/null
 
+    # One-time per session: block first Read if modules need CLAUDE.md
+    # "decision":"block" forces Claude to respond — unlike additionalContext which is advisory
+    UPDATE_MARKER="$KG_DATA/.update-triggered"
+    if [ ! -f "$UPDATE_MARKER" ] && [ -f "$KG_DATA/.initialized" ] && [ -f "$EVENTS" ]; then
+      PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+      if [ "$PENDING" -ge 5 ]; then
+        MISSING=0
+        for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
+          | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10); do
+          [ "$d" = "." ] && continue
+          [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING=$((MISSING + 1))
+        done
+        touch "$UPDATE_MARKER" 2>/dev/null
+        if [ "$MISSING" -gt 0 ]; then
+          printf '{"decision":"block","reason":"[kg auto-trigger] %d active modules lack CLAUDE.md knowledge nodes (%d events pending). Invoke Skill tool (skill: knowledge-graph) to auto-detect and generate missing knowledge nodes. This improves prediction quality for the rest of this session."}\n' "$MISSING" "$PENDING"
+          exit 0
+        fi
+      fi
+    fi
+
     # Skip prediction if module already accessed this session
     FIRST_ACCESS=true
     ws_is_paged_in "$TARGET_DIR" && FIRST_ACCESS=false
