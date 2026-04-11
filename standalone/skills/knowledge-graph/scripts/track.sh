@@ -66,7 +66,7 @@ case "$CMD" in
         done
         touch "$UPDATE_MARKER" 2>/dev/null
         if [ "$MISSING" -gt 0 ]; then
-          printf '{"decision":"block","reason":"[kg auto-trigger] %d active modules lack CLAUDE.md knowledge nodes (%d events pending). Invoke Skill tool (skill: knowledge-graph) to auto-detect and generate missing knowledge nodes. This improves prediction quality for the rest of this session."}\n' "$MISSING" "$PENDING"
+          printf '{"decision":"block","reason":"BLOCKED: %d modules need CLAUDE.md. Run: Skill tool, skill=knowledge-graph, args=update. Then retry this read."}\n' "$MISSING"
           exit 0
         fi
       fi
