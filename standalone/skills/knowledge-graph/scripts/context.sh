@@ -34,19 +34,34 @@ case "$CMD" in
       [ -n "$SNAP_CONTENT" ] && CONTEXT="$CONTEXT\n$SNAP_CONTENT"
     fi
 
-    # Smart update suggestion: only when stale + significant events
+    # Auto-update: trigger when active modules lack CLAUDE.md
     if [ -f "$EVENTS" ]; then
       PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+
+      # Check if any recently active directories are missing CLAUDE.md
+      MISSING_NODES=0
+      if [ "$PENDING" -ge 5 ]; then
+        ACTIVE_DIRS=$(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
+          | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10)
+        for d in $ACTIVE_DIRS; do
+          [ "$d" = "." ] && continue
+          [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING_NODES=$((MISSING_NODES + 1))
+        done
+      fi
+
+      if [ "$MISSING_NODES" -gt 0 ]; then
+        emit_hook_context "$(json_escape "[kg auto-trigger] $MISSING_NODES active modules lack CLAUDE.md knowledge nodes ($PENDING events pending). Run incremental update now: invoke Skill tool (skill: knowledge-graph, args: update). After update completes, continue with the user task.")"
+        exit 0
+      fi
+
+      # Fallback: suggest update when stale + significant events
       INDEX="$KG_DATA/knowledge-index.md"
-      STALE=false
       if [ -f "$INDEX" ]; then
         LAST_MOD=$(stat -f %m "$INDEX" 2>/dev/null || stat -c %Y "$INDEX" 2>/dev/null || echo 0)
         NOW_TS=$(date +%s)
-        [ $((NOW_TS - LAST_MOD)) -gt 3600 ] && [ "$PENDING" -ge 15 ] && STALE=true
-      else
-        [ "$PENDING" -ge 10 ] && STALE=true
+        [ $((NOW_TS - LAST_MOD)) -gt 3600 ] && [ "$PENDING" -ge 15 ] && \
+          CONTEXT="$CONTEXT\n[knowledge-graph] $PENDING events pending (last update >1h ago). Consider running /knowledge-graph update"
       fi
-      [ "$STALE" = true ] && CONTEXT="$CONTEXT\n[知识图谱] ${PENDING} 条变更待同步（上次更新超 1 小时），建议运行 /knowledge-graph update"
     fi
 
     # Hot zones from cached analysis
