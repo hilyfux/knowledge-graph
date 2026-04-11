@@ -17,6 +17,8 @@ case "$CMD" in
 
     # Reset session-scoped state
     > "$WS" 2>/dev/null
+    > "$WS_READ_SET" 2>/dev/null
+    > "$WS_WRITE_SET" 2>/dev/null
     > "$PRED_CACHE" 2>/dev/null
     rm -f "$KG_DATA/.trigger-checked" "$KG_DATA/.update-triggered" 2>/dev/null
 

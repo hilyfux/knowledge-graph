@@ -7,9 +7,11 @@
 KG_DATA="$CLAUDE_PROJECT_DIR/.knowledge-graph"
 [ -d "$KG_DATA" ] || mkdir -p "$KG_DATA"
 
-# Working set: tracks which module directories are accessed this session
-# Format: {timestamp}\t{dir}\t{r|w}   (append-only, reset per session)
+# Working set log: full access history (for ws_top, ws_dirty, save_snapshot)
 WS="$KG_DATA/working-set.dat"
+# Working set index: deduplicated dirs for O(1) paged-in check
+WS_READ_SET="$KG_DATA/ws-reads.set"
+WS_WRITE_SET="$KG_DATA/ws-writes.set"
 
 # Prediction cache: avoids re-running infer.sh predict for known dirs
 # Format: {timestamp}\t{dir}\t{pred1,pred2,...}   (one entry per dir, 300s TTL)
@@ -28,14 +30,20 @@ emit_hook_context() {
 ws_touch() {
   # Skip absolute paths (cross-project files that leaked past guards)
   case "$2" in /*) return ;; esac
-  printf '%s\t%s\t%s\n' "$1" "$2" "${3:-r}" >> "$WS" 2>/dev/null
+  local type="${3:-r}"
+  printf '%s\t%s\t%s\n' "$1" "$2" "$type" >> "$WS" 2>/dev/null
+  # Maintain deduplicated set files for O(1) lookup
+  if [ "$type" = "r" ]; then
+    grep -qxF "$2" "$WS_READ_SET" 2>/dev/null || echo "$2" >> "$WS_READ_SET"
+  else
+    grep -qxF "$2" "$WS_WRITE_SET" 2>/dev/null || echo "$2" >> "$WS_WRITE_SET"
+  fi
 }
 
-# Returns 0 if module was READ before in this session (writes don't count —
-# writing to a dir doesn't mean you know its related modules)
+# O(1) check: was this dir READ before? (grep on small set file, not full log)
 ws_is_paged_in() {
-  [ ! -f "$WS" ] && return 1
-  awk -F'\t' -v d="$1" '$2 == d && $3 == "r" {found=1; exit} END {exit !found}' "$WS" 2>/dev/null
+  [ ! -f "$WS_READ_SET" ] && return 1
+  grep -qxF "$1" "$WS_READ_SET" 2>/dev/null
 }
 
 ws_top() {
@@ -45,8 +53,8 @@ ws_top() {
 }
 
 ws_dirty() {
-  [ ! -f "$WS" ] && return
-  awk -F'\t' '$3 == "w" {print $2}' "$WS" 2>/dev/null | sort -u
+  [ ! -f "$WS_WRITE_SET" ] && return
+  cat "$WS_WRITE_SET" 2>/dev/null
 }
 
 # ── Prediction Cache ──────────────────────────────────────────────────────────
