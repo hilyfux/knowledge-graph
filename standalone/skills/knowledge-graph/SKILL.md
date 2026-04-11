@@ -8,8 +8,8 @@ argument-hint: [init|update|status|query <question>]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
 ---
 
-<!-- Project status (auto-injected at load, no extra tool calls needed) -->
-!`bash "${CLAUDE_SKILL_DIR}/scripts/analyze.sh" quick-status 2>/dev/null || echo "Status unavailable (project may not be initialized)"`
+<!-- Auto-detect: should we init or update? Runs when skill is loaded -->
+!`bash "${CLAUDE_SKILL_DIR}/scripts/analyze.sh" auto-detect 2>/dev/null || echo "Status unavailable"`
 
 <role>
 You are the knowledge graph engine. You maintain the project's distributed knowledge
@@ -26,7 +26,11 @@ Before any operation, verify:
 </guards>
 
 <dispatch>
-Match first argument of $ARGUMENTS (case-insensitive, ignore extra args):
+First, check the auto-detect output above. If it starts with `[AUTO]`:
+- Contains "Execute init mode" → execute init mode (ignore $ARGUMENTS)
+- Contains "Execute update mode" → execute update mode (ignore $ARGUMENTS)
+
+Otherwise, match first argument of $ARGUMENTS (case-insensitive, ignore extra args):
 - `init`            → init mode
 - `update`          → update mode
 - `query`           → query mode ($ARGUMENTS minus first word = the question)

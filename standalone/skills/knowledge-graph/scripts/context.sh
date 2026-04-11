@@ -21,9 +21,9 @@ case "$CMD" in
 
     # Knowledge index loaded via @include in .claude/CLAUDE.md (always resident)
 
-    # Auto-init: if never initialized, trigger init on first session
+    # Auto-trigger: if not initialized or active modules missing CLAUDE.md
     if [ ! -f "$KG_DATA/.initialized" ]; then
-      emit_hook_context "$(json_escape '[kg auto-trigger] This project has not been initialized. Run knowledge-graph init now: invoke Skill tool (skill: knowledge-graph, args: init). After init completes, continue with the user task.')"
+      emit_hook_context "$(json_escape '[kg auto-trigger] Project not initialized. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run init.')"
       exit 0
     fi
 
@@ -50,17 +50,8 @@ case "$CMD" in
       fi
 
       if [ "$MISSING_NODES" -gt 0 ]; then
-        emit_hook_context "$(json_escape "[kg auto-trigger] $MISSING_NODES active modules lack CLAUDE.md knowledge nodes ($PENDING events pending). Run incremental update now: invoke Skill tool (skill: knowledge-graph, args: update). After update completes, continue with the user task.")"
+        emit_hook_context "$(json_escape "[kg auto-trigger] $MISSING_NODES active modules lack CLAUDE.md. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update.")"
         exit 0
-      fi
-
-      # Fallback: suggest update when stale + significant events
-      INDEX="$KG_DATA/knowledge-index.md"
-      if [ -f "$INDEX" ]; then
-        LAST_MOD=$(stat -f %m "$INDEX" 2>/dev/null || stat -c %Y "$INDEX" 2>/dev/null || echo 0)
-        NOW_TS=$(date +%s)
-        [ $((NOW_TS - LAST_MOD)) -gt 3600 ] && [ "$PENDING" -ge 15 ] && \
-          CONTEXT="$CONTEXT\n[knowledge-graph] $PENDING events pending (last update >1h ago). Consider running /knowledge-graph update"
       fi
     fi
 

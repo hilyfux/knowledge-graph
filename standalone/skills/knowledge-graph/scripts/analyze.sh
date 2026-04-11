@@ -40,8 +40,40 @@ case "$CMD" in
     COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' 2>/dev/null || echo 0)
     CLAUDE_MD_COUNT=$(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
       -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l | tr -d ' ')
-    LAST=$([ -f "$ANALYSIS" ] && date -r "$ANALYSIS" "+%m/%d %H:%M" 2>/dev/null || echo "未生成")
-    echo "待处理事件: ${COUNT} | CLAUDE.md: ${CLAUDE_MD_COUNT} | 上次分析: ${LAST}"
+    LAST=$([ -f "$ANALYSIS" ] && date -r "$ANALYSIS" "+%m/%d %H:%M" 2>/dev/null || echo "never")
+    echo "Pending events: ${COUNT} | CLAUDE.md nodes: ${CLAUDE_MD_COUNT} | Last analysis: ${LAST}"
+    ;;
+
+  auto-detect)
+    # Called by SKILL.md !` preprocessor — detect if init or update is needed
+    # and output a directive that tells Claude which mode to run
+
+    # Case 1: never initialized → need init
+    if [ ! -f "$KG_DATA/.initialized" ]; then
+      echo "[AUTO] Project not initialized. Execute init mode now."
+      exit 0
+    fi
+
+    # Case 2: active modules missing CLAUDE.md → need update
+    MISSING=0
+    if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
+      for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
+        | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10); do
+        [ "$d" = "." ] && continue
+        [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING=$((MISSING + 1))
+      done
+    fi
+    if [ "$MISSING" -gt 0 ]; then
+      COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+      echo "[AUTO] $MISSING active modules lack CLAUDE.md ($COUNT events pending). Execute update mode now."
+      exit 0
+    fi
+
+    # Case 3: normal status
+    COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' 2>/dev/null || echo 0)
+    CLAUDE_MD_COUNT=$(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
+      -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l | tr -d ' ')
+    echo "Pending events: ${COUNT} | CLAUDE.md nodes: ${CLAUDE_MD_COUNT} | Status: OK"
     ;;
 
   scan)
