@@ -164,28 +164,34 @@ else
       --argjson h "$HOOKS_JSON" \
       '
         .hooks //= {} |
+        .hooks.PreToolUse         = ((.hooks.PreToolUse // [])         + $h.PreToolUse) |
         .hooks.PostToolUse        = ((.hooks.PostToolUse // [])        | map(select(.hooks[]?.command | contains("track-activity.sh") | not)) + $h.PostToolUse) |
         .hooks.PostToolUseFailure = ((.hooks.PostToolUseFailure // []) | map(select(.hooks[]?.command | contains("track-failure.sh") | not))  + $h.PostToolUseFailure) |
         .hooks.InstructionsLoaded = ((.hooks.InstructionsLoaded // []) | map(select(.hooks[]?.command | contains("track-instructions.sh") | not)) + $h.InstructionsLoaded) |
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       | map(select(.hooks[]?.command | contains("inject-") | not) | select(.hooks[]?.command | contains("on-compact") | not)) + $h.SessionStart) |
         .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      | map(select(.hooks[]?.command | contains("inject-subagent") | not)) + $h.SubagentStart) |
         .hooks.Stop               = ((.hooks.Stop // [])               | map(select(.hooks[]?.command | contains("on-stop") | not)) + $h.Stop) |
+        .hooks.PreCompact         = ((.hooks.PreCompact // [])         + $h.PreCompact) |
         .hooks.PostCompact        = ((.hooks.PostCompact // [])        | map(select(.hooks[]?.command | contains("context.sh") | not)) + $h.PostCompact) |
         .hooks.UserPromptSubmit   = ((.hooks.UserPromptSubmit // [])   | map(select(.hooks[]?.command | contains("prompt-trigger") | not)) + $h.UserPromptSubmit)
       ' > "$SETTINGS"
   elif echo "$EXISTING" | jq -e '.hooks.PostToolUse[]? | select(.hooks[]?.command | contains("knowledge-graph/scripts/track.sh"))' >/dev/null 2>&1; then
     # Already installed — patch missing hooks
     PATCHED=false
-    if ! echo "$EXISTING" | jq -e '.hooks.UserPromptSubmit[]? | select(.hooks[]?.command | contains("prompt-trigger"))' >/dev/null 2>&1; then
-      info "补充 UserPromptSubmit hook..."
-      EXISTING=$(echo "$EXISTING" | jq --argjson h "$HOOKS_JSON" '.hooks.UserPromptSubmit = ((.hooks.UserPromptSubmit // []) + $h.UserPromptSubmit)')
-      PATCHED=true
-    fi
-    if ! echo "$EXISTING" | jq -e '.hooks.PostCompact[]? | select(.hooks[]?.command | contains("context.sh"))' >/dev/null 2>&1; then
-      info "补充 PostCompact hook..."
-      EXISTING=$(echo "$EXISTING" | jq --argjson h "$HOOKS_JSON" '.hooks.PostCompact = ((.hooks.PostCompact // []) + $h.PostCompact)')
-      PATCHED=true
-    fi
+    for HOOK_TYPE in PreToolUse PreCompact UserPromptSubmit PostCompact; do
+      HOOK_CMD=""
+      case "$HOOK_TYPE" in
+        PreToolUse)    HOOK_CMD="pre-write" ;;
+        PreCompact)    HOOK_CMD="precompact" ;;
+        UserPromptSubmit) HOOK_CMD="prompt-trigger" ;;
+        PostCompact)   HOOK_CMD="postcompact" ;;
+      esac
+      if ! echo "$EXISTING" | jq -e ".hooks.${HOOK_TYPE}[]?" >/dev/null 2>&1; then
+        info "补充 ${HOOK_TYPE} hook..."
+        EXISTING=$(echo "$EXISTING" | jq --argjson h "$HOOKS_JSON" ".hooks.${HOOK_TYPE} = ((.hooks.${HOOK_TYPE} // []) + \$h.${HOOK_TYPE})")
+        PATCHED=true
+      fi
+    done
     if [ "$PATCHED" = true ]; then
       echo "$EXISTING" > "$SETTINGS"
     else
@@ -196,12 +202,14 @@ else
       --argjson h "$HOOKS_JSON" \
       '
         .hooks //= {} |
+        .hooks.PreToolUse         = ((.hooks.PreToolUse // [])         + $h.PreToolUse) |
         .hooks.PostToolUse        = ((.hooks.PostToolUse // [])        + $h.PostToolUse) |
         .hooks.PostToolUseFailure = ((.hooks.PostToolUseFailure // []) + $h.PostToolUseFailure) |
         .hooks.InstructionsLoaded = ((.hooks.InstructionsLoaded // []) + $h.InstructionsLoaded) |
         .hooks.SessionStart       = ((.hooks.SessionStart // [])       + $h.SessionStart) |
         .hooks.SubagentStart      = ((.hooks.SubagentStart // [])      + $h.SubagentStart) |
         .hooks.Stop               = ((.hooks.Stop // [])               + $h.Stop) |
+        .hooks.PreCompact         = ((.hooks.PreCompact // [])         + $h.PreCompact) |
         .hooks.PostCompact        = ((.hooks.PostCompact // [])        + $h.PostCompact) |
         .hooks.UserPromptSubmit   = ((.hooks.UserPromptSubmit // [])   + $h.UserPromptSubmit)
       ' > "$SETTINGS"
