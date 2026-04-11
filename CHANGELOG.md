@@ -6,6 +6,31 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [1.2.1] - 2026-04-11
+
+### Fixed — Live Monitoring Session (8 bugs found and fixed)
+
+- **Cross-project path pollution**: files edited outside `$CLAUDE_PROJECT_DIR` (e.g. editing project-B while in project-A) leaked absolute paths into events, breaking all inference. Added `is_project_file()` guard.
+- **InstructionsLoaded absolute paths**: global `~/.claude/CLAUDE.md` and plugin paths recorded as events. Added `startswith($prefix)` filter.
+- **Write cleared prediction cache**: every Edit triggered `tlb_invalidate`, wiping the cache that was just populated by a preceding Read. Removed — editing current dir doesn't change its relationship to other dirs.
+- **Write blocked Read prediction**: `ws_is_paged_in` checked both read and write records. A Write to a dir caused subsequent first-Read to skip prediction. Now only checks `r` records.
+- **Cold start empty predictions**: `infer.sh predict` returned `[]` when event history was sparse. Added git log co-change fallback.
+- **`decision:block` in PostToolUse**: block was placed in PostToolUse (after tool executed), making it ineffective. Moved to PreToolUse where it actually prevents the Write.
+- **install.sh missing PreToolUse/PreCompact**: the jq merge filter in all 3 install paths omitted PreToolUse and PreCompact hook types. New hooks were defined but never installed.
+- **InstructionsLoaded noise**: root and `.claude/` CLAUDE.md loads recorded on every session start/compact, filling 21% of events with data that inference never uses. Now only records module-level CLAUDE.md.
+
+### Added — Auto-Trigger System
+
+- **PreToolUse Write|Edit block**: when writing to a module directory without CLAUDE.md, the Write is blocked and Claude is prompted to create the knowledge node before proceeding.
+- **Context-aware trigger**: simple modules (< 5 writes, 0 failures) get a format template for direct creation (~2s). Complex modules (≥ 5 writes or failures) are directed to use the Skill tool for deeper analysis (~30s).
+- **Skill auto-detect preprocessor**: SKILL.md `!` preprocessor runs `analyze.sh auto-detect` to determine if init or update is needed, outputting `[AUTO] Execute init/update mode` directives.
+
+### Improved — Performance
+
+- **Working set deduplication**: `ws_touch` now maintains `ws-reads.set` and `ws-writes.set` alongside the full log. `ws_is_paged_in` checks the small set file (grep on ~20 lines) instead of scanning the full log (200+ lines).
+- **`ws_dirty` optimized**: reads `ws-writes.set` directly instead of `awk|sort -u` on full log.
+- **InstructionsLoaded filtered**: ~21% reduction in event file noise.
+
 ## [1.2.0] - 2026-04-10
 
 ### Added — Zero-Interrupt Architecture
