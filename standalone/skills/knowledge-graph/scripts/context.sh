@@ -15,9 +15,10 @@ case "$CMD" in
     rm -f "$KG_DATA/.kg-updating" 2>/dev/null
     rm -f "$CLAUDE_PROJECT_DIR/.claude/.evolving" 2>/dev/null
 
-    # Reset working set + prediction cache for new session
+    # Reset session-scoped state
     > "$WS" 2>/dev/null
     > "$PRED_CACHE" 2>/dev/null
+    rm -f "$KG_DATA/.trigger-checked" 2>/dev/null
 
     # Knowledge index loaded via @include in .claude/CLAUDE.md (always resident)
 
