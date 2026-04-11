@@ -125,11 +125,14 @@ case "$CMD" in
     ;;
 
   instructions)
+    # Only record module-level CLAUDE.md loads (skip root, .claude/, .knowledge-graph/)
     cat | jq -c --argjson t "$TS" --arg prefix "$PREFIX" '
       [(.loaded_files // [])[], (.file_path // empty)] | unique | .[] |
       select(. != null and . != "") |
       select(startswith($prefix)) |
       sub($prefix; "") |
+      select(endswith("CLAUDE.md")) |
+      select(. != "CLAUDE.md" and (startswith(".claude/") | not) and (startswith(".knowledge-graph/") | not)) |
       {e:"i", p:., t:$t}
     ' >> "$EVENTS" 2>/dev/null
     ;;
