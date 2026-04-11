@@ -9,33 +9,43 @@ TS=$(date +%s)
 PREFIX="$CLAUDE_PROJECT_DIR/"
 CMD="${1:-write}"
 
+# Guard: skip files outside current project (cross-project edits)
+is_project_file() {
+  case "$1" in
+    "$PREFIX"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 case "$CMD" in
 
   write)
     INPUT=$(cat)
-    echo "$INPUT" | jq -c --argjson t "$TS" --arg prefix "$PREFIX" '
-      .tool_name as $tool |
-      if $tool == "Write" then
-        (.tool_input.file_path // empty) | sub($prefix; "") |
-        if . != "" then {e:"w:new",p:.,t:$t} else empty end
-      elif $tool == "Edit" then
-        (.tool_input.file_path // empty) | sub($prefix; "") |
-        if . != "" then {e:"w:edit",p:.,t:$t} else empty end
-      else empty end
-    ' >> "$EVENTS" 2>/dev/null
-
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
-    if [ -n "$FILE_PATH" ]; then
-      TARGET_DIR=$(dirname "${FILE_PATH#$PREFIX}")
-      ws_touch "$TS" "$TARGET_DIR" "w"
-      tlb_invalidate "$TARGET_DIR"
-    fi
+    [ -z "$FILE_PATH" ] && exit 0
+    is_project_file "$FILE_PATH" || exit 0
+
+    REL="${FILE_PATH#$PREFIX}"
+    TARGET_DIR=$(dirname "$REL")
+
+    # Record event
+    TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null)
+    case "$TOOL" in
+      Write) echo "{\"e\":\"w:new\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS" 2>/dev/null ;;
+      Edit)  echo "{\"e\":\"w:edit\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS" 2>/dev/null ;;
+    esac
+
+    # Update working set + invalidate prediction cache
+    ws_touch "$TS" "$TARGET_DIR" "w"
+    tlb_invalidate "$TARGET_DIR"
     ;;
 
   read)
     INPUT=$(cat)
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
     [ -z "$FILE_PATH" ] && exit 0
+    is_project_file "$FILE_PATH" || exit 0
+
     REL="${FILE_PATH#$PREFIX}"
     TARGET_DIR=$(dirname "$REL")
 
@@ -70,7 +80,7 @@ case "$CMD" in
 
     if [ -n "$CONTEXT" ]; then
       ESCAPED=$(printf '%s' "$CONTEXT" | sed 's/"/\\"/g' | tr '\n' ' ')
-      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"[预测关联] %s"}}\n' "$ESCAPED"
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"[Related] %s"}}\n' "$ESCAPED"
     fi
     ;;
 
@@ -84,6 +94,7 @@ case "$CMD" in
     cat | jq -c --argjson t "$TS" --arg prefix "$PREFIX" '
       [(.loaded_files // [])[], (.file_path // empty)] | unique | .[] |
       select(. != null and . != "") |
+      select(startswith($prefix)) |
       sub($prefix; "") |
       {e:"i", p:., t:$t}
     ' >> "$EVENTS" 2>/dev/null

@@ -94,6 +94,7 @@ case "$CMD" in
     cat | jq -c --argjson t "$TS" --arg prefix "$PREFIX" '
       [(.loaded_files // [])[], (.file_path // empty)] | unique | .[] |
       select(. != null and . != "") |
+      select(startswith($prefix)) |
       sub($prefix; "") |
       {e:"i", p:., t:$t}
     ' >> "$EVENTS" 2>/dev/null
