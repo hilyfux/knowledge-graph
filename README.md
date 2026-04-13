@@ -1,14 +1,22 @@
 # Knowledge Graph for Claude Code
 
-**Persistent memory that makes Claude Code smarter with every session.**
+**Persistent memory for Claude Code, built from real coding history instead of another database.**
 
 [![GitHub stars](https://img.shields.io/github/stars/hilyfux/knowledge-graph?style=social)](https://github.com/hilyfux/knowledge-graph)
+[![CI](https://img.shields.io/github/actions/workflow/status/hilyfux/knowledge-graph/test.yml?branch=main&label=tests)](https://github.com/hilyfux/knowledge-graph/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/hilyfux/knowledge-graph)](https://github.com/hilyfux/knowledge-graph/commits/main)
 
-Claude Code forgets everything between sessions. Knowledge Graph fixes that. It silently tracks every file operation via hooks, builds distributed `CLAUDE.md` knowledge nodes across your project, and injects the right context when Claude needs it -- automatically.
+Claude Code forgets everything between sessions. Knowledge Graph fixes that by turning your existing file operations into a lightweight, git-native memory layer. It silently records reads and edits via hooks, builds distributed `CLAUDE.md` knowledge nodes across your project, and injects the right context exactly when Claude needs it.
 
-**Zero dependencies beyond `jq`. No databases. No vector stores. No external services. Just bash scripts and git.**
+**Zero dependencies beyond `jq`. No databases. No vector stores. No external services. Just bash, git, and evidence from your own repo.**
+
+## Why people try it
+
+- **Session-to-session memory** without a hosted service or vector database
+- **Git-native knowledge graph** built from real co-change and read/write patterns
+- **Zero-interrupt workflow** that stays out of the way while you code
+- **Privacy-first local architecture** with everything stored in your project
 
 ---
 
