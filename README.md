@@ -21,6 +21,17 @@ Claude Code forgets everything between sessions. Knowledge Graph fixes that by t
 - **Privacy-first local architecture** with everything stored in your project
 - **Contributor-friendly architecture** with plain bash hooks, readable runtime files, and no lock-in
 
+## Why it feels different
+
+Most Claude Code memory tools add another service, another database, or another synchronization problem. Knowledge Graph stays small on purpose.
+
+- **Karpathy-style AutoResearch loop**: observe real work, infer patterns, then promote only evidence-backed rules
+- **Anthropic-practice friendly**: works with nested `CLAUDE.md`, hooks, and session lifecycle instead of fighting them
+- **Zero-dependency runtime**: plain bash, git, and `jq`, so contributors can inspect and change the whole stack quickly
+- **Git-native by default**: snapshots, rules, and evolution live next to the code they describe
+
+If you care about durable context but hate black-box memory systems, this is the pitch in one line: **local, inspectable memory that earns trust from repo history instead of embeddings magic.**
+
 ---
 
 ## What's New in v1.2.0
