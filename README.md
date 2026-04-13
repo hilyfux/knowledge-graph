@@ -9,6 +9,8 @@
 
 Claude Code forgets everything between sessions. Knowledge Graph fixes that by turning your existing file operations into a lightweight, git-native memory layer. It silently records reads and edits via hooks, builds distributed `CLAUDE.md` knowledge nodes across your project, and injects the right context exactly when Claude needs it.
 
+**Inspired by Anthropic's Claude Code practices and Karpathy-style AutoResearch loops, but implemented as a zero-dependency, git-native layer you can drop into a real repo today.**
+
 **Zero dependencies beyond `jq`. No databases. No vector stores. No external services. Just bash, git, and evidence from your own repo.**
 
 ## Why people try it
@@ -17,6 +19,7 @@ Claude Code forgets everything between sessions. Knowledge Graph fixes that by t
 - **Git-native knowledge graph** built from real co-change and read/write patterns
 - **Zero-interrupt workflow** that stays out of the way while you code
 - **Privacy-first local architecture** with everything stored in your project
+- **Contributor-friendly architecture** with plain bash hooks, readable runtime files, and no lock-in
 
 ---
 
