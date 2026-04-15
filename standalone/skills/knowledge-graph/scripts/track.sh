@@ -91,11 +91,32 @@ case "$CMD" in
     # Record event
     echo "{\"e\":\"r\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS" 2>/dev/null
 
+    # Large-file guard: warn before the Read tool hits its 25K-token ceiling
+    # and burns a round-trip. Override via env KG_READ_SIZE_WARN_KB (default 40).
+    SIZE_WARN=""
+    if [ -f "$FILE_PATH" ]; then
+      FILE_BYTES=$(stat -f %z "$FILE_PATH" 2>/dev/null || stat -c %s "$FILE_PATH" 2>/dev/null || echo 0)
+      THRESHOLD_KB=${KG_READ_SIZE_WARN_KB:-40}
+      THRESHOLD_BYTES=$((THRESHOLD_KB * 1024))
+      if [ "$FILE_BYTES" -gt "$THRESHOLD_BYTES" ] 2>/dev/null; then
+        FILE_KB=$((FILE_BYTES / 1024))
+        SIZE_WARN="[kg:size-guard] $REL is ~${FILE_KB}KB — Read will likely hit the token ceiling. Prefer Grep to locate, then Read with offset/limit, or split the read. "
+      fi
+    fi
+
     # Skip prediction if module already accessed this session
     FIRST_ACCESS=true
     ws_is_paged_in "$TARGET_DIR" && FIRST_ACCESS=false
     ws_touch "$TS" "$TARGET_DIR" "r"
-    [ "$FIRST_ACCESS" = false ] && exit 0
+
+    # On repeat access, skip prediction but still surface the size warning.
+    if [ "$FIRST_ACCESS" = false ]; then
+      if [ -n "$SIZE_WARN" ]; then
+        ESCAPED=$(printf '%s' "$SIZE_WARN" | sed 's/"/\\"/g' | tr '\n' ' ')
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$ESCAPED"
+      fi
+      exit 0
+    fi
 
     # Check prediction cache (single call — capture output and test exit code)
     PRED_DIRS=$(tlb_get "$TARGET_DIR" "$TS") || {
@@ -107,19 +128,24 @@ case "$CMD" in
         tlb_set "$TS" "$TARGET_DIR" "$PRED_CSV"
       fi
     }
-    [ -z "$PRED_DIRS" ] && exit 0
 
-    # Prefetch: inject predicted module prohibitions
+    # Prefetch: inject predicted module prohibitions (may be empty)
     CONTEXT=""
-    while IFS= read -r pdir; do
-      [ -z "$pdir" ] && continue
-      RULES=$(get_prohibitions "$CLAUDE_PROJECT_DIR/$pdir/CLAUDE.md" 3)
-      [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}\n"
-    done <<< "$PRED_DIRS"
+    if [ -n "$PRED_DIRS" ]; then
+      while IFS= read -r pdir; do
+        [ -z "$pdir" ] && continue
+        RULES=$(get_prohibitions "$CLAUDE_PROJECT_DIR/$pdir/CLAUDE.md" 3)
+        [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}\n"
+      done <<< "$PRED_DIRS"
+    fi
 
-    if [ -n "$CONTEXT" ]; then
-      ESCAPED=$(printf '%s' "$CONTEXT" | sed 's/"/\\"/g' | tr '\n' ' ')
-      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"[Related] %s"}}\n' "$ESCAPED"
+    # Combine size warning + related-module prohibitions into one hook output
+    COMBINED=""
+    [ -n "$SIZE_WARN" ]   && COMBINED="$SIZE_WARN"
+    [ -n "$CONTEXT" ]     && COMBINED="${COMBINED}[Related] ${CONTEXT}"
+    if [ -n "$COMBINED" ]; then
+      ESCAPED=$(printf '%s' "$COMBINED" | sed 's/"/\\"/g' | tr '\n' ' ')
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$ESCAPED"
     fi
     ;;
 
