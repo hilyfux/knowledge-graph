@@ -142,16 +142,34 @@ Delete temp file `.knowledge-graph/graph-scan.json`.
 </step>
 
 <step id="6" name="index">
-Glob `**/CLAUDE.md` (exclude .git, node_modules). Read each file's `# title`.
+Glob `**/CLAUDE.md` (exclude .git, node_modules). For each file, read its `# title`
+line AND the first 2-3 entries under `## Prohibitions` / `## Conventions` so the tag
+reflects actual content, not just the path.
+
 Generate `.knowledge-graph/knowledge-index.md` as a pointer index:
 
 ```
 # KG Index ({ISO date})
-{path}: {≤15 char tag, e.g. "auth/XSS" or "API/CORS"}
-{path}: {≤15 char tag}
+{path}: {tag}
 ```
 
-One line per module. Tags are keywords for discovery only — full rules live in module CLAUDE.md (lazy-loaded).
+Tag rules — non-negotiable (a bad tag is worse than no tag; it costs Claude
+a retrieval step and returns zero information):
+
+- ≤15 chars, a **semantic keyword** extracted from the module's actual rules
+- Format: `topic/concern` — e.g. `auth/XSS`, `API/CORS`, `legacy/v1-ref`,
+  `patch/branding`, `hook/timeout`, `mcp/stdio`
+- **Forbidden**: using the directory path as the tag. `bin/CLAUDE.md: bin/`
+  tells Claude nothing it didn't already see. If `dirname` is all you can
+  produce, you haven't read the file — go back and read it.
+- **Forbidden**: using the first line of the file (e.g. a truncated
+  `@include` directive like `@.knowledge-graph/knowledge-in`).
+- If a module has multiple concerns, pick the one that would answer "why
+  would someone grep for this module" — the most distinctive rule, not the
+  most general one.
+
+Tags are discovery keywords for lazy-loaded rules. Full details stay in the
+module's CLAUDE.md and are only loaded on access.
 
 Ensure `.claude/CLAUDE.md` contains `@.knowledge-graph/knowledge-index.md`.
 Create the file if missing; append the directive if not present.
