@@ -246,6 +246,59 @@ case "$CMD" in
       > "$ANALYSIS"
     ;;
 
+  build-index)
+    # Pure-bash knowledge-index.md generator. Replaces the LLM-driven
+    # regeneration in init step 6 / update step 5.4 — LLMs tend to
+    # shortcut to path echoes ("bin/: bin/") which gives Claude zero
+    # discovery signal. Bash extracts real topic keywords from each
+    # node's title and first prohibition, producing deterministic
+    # ≤15-char semantic tags every time.
+    INDEX_FILE="$KG_DATA/knowledge-index.md"
+    DATE=$(date +%Y-%m-%d)
+
+    mkdir -p "$KG_DATA"
+    TMP=$(mktemp -t kg-index.XXXXXX)
+    echo "# KG Index ($DATE)" > "$TMP"
+
+    COUNT=0
+    find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
+      -not -path "*/.git/*" -not -path "*/node_modules/*" \
+      -not -path "*/.knowledge-graph/*" 2>/dev/null | sort | \
+    while IFS= read -r f; do
+      REL="${f#$CLAUDE_PROJECT_DIR/}"
+      DIR=$(dirname "$REL")
+      BASE=$(basename "$DIR")
+      [ "$DIR" = "." ] && BASE="root"
+
+      # Prefer the portion after " — " in the title line (convention for kg nodes)
+      TITLE=$(head -1 "$f" 2>/dev/null | sed -E 's/^#[[:space:]]*//')
+      if printf '%s' "$TITLE" | grep -q '—'; then
+        KW=$(printf '%s' "$TITLE" | sed -E 's/.*—[[:space:]]*//' | \
+             awk '{for(i=1;i<=NF;i++){ w=tolower($i); gsub(/[^a-z0-9]/,"",w); if(length(w)>=3){print w; exit}}}')
+      else
+        # Fallback: first meaningful word of the first prohibition bullet
+        KW=$(awk 'NR>1 && /^## Prohibitions/{flag=1; next} flag && /^- /{
+          line=$0; sub(/^- */,"",line);
+          for(i=1;i<=split(line, a, / /);i++){w=tolower(a[i]); gsub(/[^a-z0-9]/,"",w); if(length(w)>=4){print w; exit}}
+          exit
+        }' "$f" 2>/dev/null)
+      fi
+      [ -z "$KW" ] && KW="node"
+
+      TAG="$BASE/$KW"
+      # Trim to 15 chars
+      TAG=$(printf '%s' "$TAG" | cut -c1-15)
+
+      echo "$REL: $TAG" >> "$TMP"
+      COUNT=$((COUNT + 1))
+    done
+
+    # File-line count: subtract header
+    ENTRIES=$(( $(wc -l < "$TMP") - 1 ))
+    mv "$TMP" "$INDEX_FILE"
+    echo "knowledge-index.md built: $ENTRIES entries"
+    ;;
+
 esac
 
 exit 0

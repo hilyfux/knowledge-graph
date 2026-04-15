@@ -142,34 +142,20 @@ Delete temp file `.knowledge-graph/graph-scan.json`.
 </step>
 
 <step id="6" name="index">
-Glob `**/CLAUDE.md` (exclude .git, node_modules). For each file, read its `# title`
-line AND the first 2-3 entries under `## Prohibitions` / `## Conventions` so the tag
-reflects actual content, not just the path.
+Regenerate the knowledge index via the deterministic bash generator — do NOT
+hand-write the index yourself. The bash script extracts real topic keywords
+from each node's title ("# foo — topic line") and first prohibition bullet,
+producing semantic tags every time. LLM-authored indices drift into path
+echoes ("bin/: bin/") when attention budgets run low.
 
-Generate `.knowledge-graph/knowledge-index.md` as a pointer index:
-
+```bash
+bash "${CLAUDE_SKILL_DIR}/scripts/analyze.sh" build-index
 ```
-# KG Index ({ISO date})
-{path}: {tag}
-```
 
-Tag rules — non-negotiable (a bad tag is worse than no tag; it costs Claude
-a retrieval step and returns zero information):
-
-- ≤15 chars, a **semantic keyword** extracted from the module's actual rules
-- Format: `topic/concern` — e.g. `auth/XSS`, `API/CORS`, `legacy/v1-ref`,
-  `patch/branding`, `hook/timeout`, `mcp/stdio`
-- **Forbidden**: using the directory path as the tag. `bin/CLAUDE.md: bin/`
-  tells Claude nothing it didn't already see. If `dirname` is all you can
-  produce, you haven't read the file — go back and read it.
-- **Forbidden**: using the first line of the file (e.g. a truncated
-  `@include` directive like `@.knowledge-graph/knowledge-in`).
-- If a module has multiple concerns, pick the one that would answer "why
-  would someone grep for this module" — the most distinctive rule, not the
-  most general one.
-
-Tags are discovery keywords for lazy-loaded rules. Full details stay in the
-module's CLAUDE.md and are only loaded on access.
+This writes `.knowledge-graph/knowledge-index.md` with one line per module:
+`{path}: {basename}/{keyword}` (≤15 chars). If the script reports low-signal
+tags (e.g. `api/api`, trailing `node` fallback), it usually means the module's
+CLAUDE.md title lacks a `— topic line` suffix — fix the title, then re-run.
 
 Ensure `.claude/CLAUDE.md` contains `@.knowledge-graph/knowledge-index.md`.
 Create the file if missing; append the directive if not present.
