@@ -163,6 +163,84 @@ save_snapshot() {
   } > "$snapshot"
 }
 
+# ── Channels + event schema (v1.3) ────────────────────────────────────────────
+# A "channel" is a logical stream of events + snapshot. The default channel
+# is the one the hooks use for general work tracking (graph-events.jsonl,
+# work-snapshot.md). Named channels let callers (e.g. silly-code's upstream-
+# upgrade tracker) maintain their own parallel stream without colliding
+# with, or corrupting, the general work snapshot.
+#
+# Default channel            → graph-events.jsonl + work-snapshot.md
+# Named channel "upgrade"    → upgrade-events.jsonl + upgrade-snapshot.md
+
+channel_events_path() {
+  local ch=${1:-}
+  case "$ch" in
+    ''|default|work) echo "$KG_DATA/graph-events.jsonl" ;;
+    *)               echo "$KG_DATA/${ch}-events.jsonl" ;;
+  esac
+}
+
+channel_snapshot_path() {
+  local ch=${1:-}
+  case "$ch" in
+    ''|default|work) echo "$KG_DATA/work-snapshot.md" ;;
+    *)               echo "$KG_DATA/${ch}-snapshot.md" ;;
+  esac
+}
+
+# Event schema (v1):
+#   required: e (enum: w:new|w:edit|r|f|i), p (non-empty string), t (number)
+#   optional: tool (string), err (string)
+# Readers that care about correctness should filter with is_valid_event_line
+# or pipe through filter_valid_events. Writers should use log_channel_event
+# which validates before appending.
+
+is_valid_event_line() {
+  local line=$1
+  [ -z "$line" ] && return 1
+  printf '%s' "$line" | jq -e '
+    (type == "object") and
+    has("e") and (.e | type == "string") and (.e | test("^(w:new|w:edit|r|f|i)$")) and
+    has("p") and (.p | type == "string") and (.p | length > 0) and
+    has("t") and (.t | type == "number")
+  ' >/dev/null 2>&1
+}
+
+filter_valid_events() {
+  # stdin: one JSON per line (possibly malformed)
+  # stdout: only lines that pass schema validation
+  while IFS= read -r line; do
+    if is_valid_event_line "$line"; then
+      printf '%s\n' "$line"
+    fi
+  done
+}
+
+log_channel_event() {
+  # Usage: log_channel_event <channel> <event_type> <path> [tool] [err]
+  # Builds a JSON event, validates, appends to the channel's events file.
+  local ch=$1 et=$2 p=$3 tool=${4:-} err=${5:-}
+  [ -z "$et" ] || [ -z "$p" ] && return 1
+  local ts target event_json
+  ts=$(date +%s)
+  target=$(channel_events_path "$ch")
+  [ -d "$(dirname "$target")" ] || mkdir -p "$(dirname "$target")"
+  if [ -n "$tool" ] || [ -n "$err" ]; then
+    event_json=$(jq -nc --arg e "$et" --arg p "$p" --argjson t "$ts" \
+      --arg tool "$tool" --arg err "$err" \
+      '{e:$e, p:$p, t:$t} + (if $tool != "" then {tool:$tool} else {} end) + (if $err != "" then {err:$err} else {} end)')
+  else
+    event_json=$(jq -nc --arg e "$et" --arg p "$p" --argjson t "$ts" \
+      '{e:$e, p:$p, t:$t}')
+  fi
+  if is_valid_event_line "$event_json"; then
+    printf '%s\n' "$event_json" >> "$target"
+    return 0
+  fi
+  return 1
+}
+
 # ── Shared: inject working set module prohibitions ────────────────────────────
 inject_working_set_rules() {
   local max="${1:-5}"

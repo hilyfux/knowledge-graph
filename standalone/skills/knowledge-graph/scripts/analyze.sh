@@ -246,6 +246,87 @@ case "$CMD" in
       > "$ANALYSIS"
     ;;
 
+  save-channel-snapshot)
+    # Usage: analyze.sh save-channel-snapshot <channel>
+    # Writes .knowledge-graph/{channel}-snapshot.md from {channel}-events.jsonl.
+    # For the default (work) channel, use `analyze.sh stop` instead — this
+    # command is for named channels only (e.g. "upgrade").
+    CH=${2:-}
+    if [ -z "$CH" ] || [ "$CH" = "default" ] || [ "$CH" = "work" ]; then
+      echo "usage: analyze.sh save-channel-snapshot <channel> (non-default)" >&2
+      exit 1
+    fi
+
+    CH_EVENTS=$(channel_events_path "$CH")
+    CH_SNAP=$(channel_snapshot_path "$CH")
+
+    if [ ! -f "$CH_EVENTS" ] || [ ! -s "$CH_EVENTS" ]; then
+      echo "no events in channel '$CH' ($CH_EVENTS)"
+      exit 0
+    fi
+
+    TOTAL_LINES=$(wc -l < "$CH_EVENTS" | tr -d ' ')
+    VALID_LINES=$(filter_valid_events < "$CH_EVENTS" | wc -l | tr -d ' ')
+    BAD_LINES=$((TOTAL_LINES - VALID_LINES))
+
+    {
+      echo "# $CH 快照 ($(date '+%Y-%m-%d %H:%M'))"
+      echo ""
+      echo "## 事件统计"
+      echo "- 有效事件: $VALID_LINES"
+      [ "$BAD_LINES" -gt 0 ] && echo "- 忽略的损坏/旧 schema 行: $BAD_LINES"
+      echo ""
+      echo "## 活跃文件（最常编辑，前 8）"
+      filter_valid_events < "$CH_EVENTS" | \
+        jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null | \
+        sort | uniq -c | sort -rn | head -8 | awk '{printf "- %s (%d×)\n", $2, $1}'
+      echo ""
+      echo "## 最近 10 条事件"
+      filter_valid_events < "$CH_EVENTS" | tail -10 | \
+        jq -r '"- [\(.t | todateiso8601)] \(.e) \(.p)" + (if .err then "  — \(.err)" else "" end)' 2>/dev/null
+      echo ""
+      echo "## 错误事件（最近 5 条）"
+      FAILS=$(filter_valid_events < "$CH_EVENTS" | \
+        jq -r 'select(.e == "f") | "- [\(.t | todateiso8601)] \(.p): \(.err // "")"' 2>/dev/null | tail -5)
+      if [ -n "$FAILS" ]; then
+        echo "$FAILS"
+      else
+        echo "(无)"
+      fi
+    } > "$CH_SNAP"
+
+    echo "wrote $CH_SNAP ($VALID_LINES valid / $BAD_LINES ignored)"
+    ;;
+
+  validate-events)
+    # Usage: analyze.sh validate-events [channel]
+    # Reports schema conformance for a channel's events file.
+    CH=${2:-}
+    CH_EVENTS=$(channel_events_path "$CH")
+    if [ ! -f "$CH_EVENTS" ]; then
+      echo "no events file: $CH_EVENTS"
+      exit 0
+    fi
+    TOTAL=$(wc -l < "$CH_EVENTS" | tr -d ' ')
+    VALID=$(filter_valid_events < "$CH_EVENTS" | wc -l | tr -d ' ')
+    INVALID=$((TOTAL - VALID))
+    echo "channel: ${CH:-work}"
+    echo "file:    $CH_EVENTS"
+    echo "total:   $TOTAL"
+    echo "valid:   $VALID"
+    echo "invalid: $INVALID"
+    if [ "$INVALID" -gt 0 ]; then
+      echo ""
+      echo "first 3 invalid lines:"
+      awk -v script="$SCRIPT_DIR/guard.sh" 'NR<=200' "$CH_EVENTS" | \
+      while IFS= read -r line; do
+        if ! is_valid_event_line "$line"; then
+          printf '  %s\n' "$(printf '%.200s' "$line")"
+        fi
+      done | head -3
+    fi
+    ;;
+
   build-index)
     # Pure-bash knowledge-index.md generator. Replaces the LLM-driven
     # regeneration in init step 6 / update step 5.4 — LLMs tend to
