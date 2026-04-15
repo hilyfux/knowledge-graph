@@ -6,6 +6,70 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-04-15
+
+### Fixed — The "kg was running but invisible" pass
+
+Live-debug session against a real project (silly-code) surfaced a class of
+bugs where the pipeline was recording and predicting correctly, but the
+main Claude session never saw the output. Sub-agents did, hiding the
+problem. Five related issues, all in the same family:
+
+- **`context.sh startup` early-exit wiped the snapshot.** When auto-update
+  conditions triggered, the hook emitted a one-line trigger notice and
+  exited — discarding the full work snapshot that was already prepared.
+  Now appended to context instead; main session gets snapshot + notice.
+- **`track.sh is_project_file` now excludes `.knowledge-graph/` and
+  `.claude/`.** kg's own runtime writes were being tracked as "active
+  module activity", so `.knowledge-graph/` always looked like a module
+  lacking CLAUDE.md — perpetually triggering the early-exit above.
+- **SKILL.md-based nodes and ghost paths weren't recognized** as
+  knowledge nodes. Four mirror implementations (analyze.sh auto-detect,
+  analyze.sh analyze blind_spots, context.sh startup, prompt-trigger.sh)
+  now all skip `.knowledge-graph/`, `.claude/`, non-existent dirs, and
+  accept `SKILL.md` alongside `CLAUDE.md`.
+- **`broken_refs` now resolves both relative-to-node and project-root
+  paths.** Cross-module references like `@src/foo/CLAUDE.md` (project-
+  root form) were being flagged as broken. Also skips template
+  placeholders containing `{` (e.g. `@{path}/CLAUDE.md` in docstring
+  examples).
+- **Test 7 language drift fixed.** Test expected Chinese `初始化`; code
+  had been translated to English `not initialized`. Pre-existing.
+
+### Added — Stronger "resume previous work" signal
+
+- **`## 未提交变更 (work in progress)` section in snapshot.** When
+  `save_snapshot` runs, it now includes `git status --porcelain` output.
+  After `/clear`, Claude sees explicit `M file.js` entries and knows
+  which files are still being edited — no longer concludes "everything
+  committed, nothing to continue."
+- **Anti-overwrite guard in `save_snapshot`.** If WS is empty (e.g. a
+  Stop fires right after `/clear` wiped it) and an existing snapshot
+  already has `## 活跃模块`, skip the save. Thin snapshots no longer
+  stomp rich ones.
+
+### Added — Integration tests for the above
+
+- Tests 8-12 in `tests/test-pipeline.sh` cover track.sh runtime exclusion,
+  context.sh non-early-exit, auto-detect ghost-skip, blind_spots
+  filesystem filter, and broken_refs dual-resolve. **26/26 passing.**
+
+### Changed — SKILL.md index-tag rules tightened
+
+- LLM was emitting `bin/CLAUDE.md: bin/` (path echo) as knowledge-index
+  tags. Step 6 now explicitly forbids path echoes and truncated @include
+  lines, requires reading actual Prohibitions/Conventions before tagging,
+  and specifies "would someone grep for this distinctively?" as the
+  quality bar.
+
+### Changed — README restructured
+
+- README shrunk 358 → 172 lines. Deep architecture moved to
+  `docs/architecture-notes.md` (pipeline ASCII, full hook table, infer.sh
+  reference, context survival matrix, source + installed layout). v1.2
+  release notes moved here. Tagline anchored to a single value prop.
+  "vs Alternatives" table moved to second screen for faster decision.
+
 ## [1.2.1] - 2026-04-11
 
 ### Fixed — Live Monitoring Session (8 bugs found and fixed)

@@ -46,7 +46,7 @@ Three commands. From now on Claude Code silently tracks every read/write, builds
 - **Session-to-session memory** without a hosted service or vector DB
 - **Auto-discovered dependencies** from real co-change patterns — observe work, infer, promote only evidence-backed rules
 - **Zero-interrupt workflow** — heavy analysis runs at session boundaries, not during coding
-- **Survives `clear` and `compact`** — working state restored from snapshot on next session
+- **Survives `clear` and `compact`** — snapshot includes active modules, recent commits, and `git status` uncommitted changes, so Claude resumes where you left off
 - **Everything local + git-committed** — inspectable, versionable, no lock-in
 
 ---
