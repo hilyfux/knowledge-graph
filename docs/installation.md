@@ -4,18 +4,34 @@ Knowledge Graph is designed to be easy to adopt in an existing Claude Code workf
 
 ## Requirements
 
-- macOS or Linux shell environment
-- `bash`
+- `bash` (macOS/Linux: native; Windows: Git Bash or WSL)
 - `jq`
 - Claude Code project with a writable `.claude/` directory
 
 Install `jq` if needed:
 
 ```bash
+# macOS
 brew install jq
+
+# Linux
+sudo apt install jq      # Debian/Ubuntu
+sudo dnf install jq      # Fedora
+
+# Windows (PowerShell)
+winget install jqlang.jq
+# or: scoop install jq / choco install jq
 ```
 
-## Quick install
+Windows users also need `bash`. The easiest path is Git for Windows (ships with Git Bash):
+
+```powershell
+winget install Git.Git
+```
+
+After installing, restart your shell so `bash.exe` is on `PATH`.
+
+## Quick install (macOS / Linux / WSL)
 
 Clone the repository and run the installer against your project:
 
@@ -30,6 +46,24 @@ If you run the installer from inside your target project, you can also do:
 ```bash
 bash /path/to/knowledge-graph/standalone/install.sh .
 ```
+
+## Quick install (Windows PowerShell)
+
+```powershell
+git clone https://github.com/hilyfux/knowledge-graph.git
+cd knowledge-graph
+.\standalone\install.ps1 C:\path\to\project
+```
+
+The PowerShell installer mirrors the bash one: copies the skill to
+`.claude\skills\knowledge-graph\`, merges hooks into `.claude\settings.json`,
+registers the MCP server in `.mcp.json`, and adds `.knowledge-graph/` to
+`.gitignore`. Runtime still uses the `.sh` scripts — Claude Code's hooks run
+them via the bash on your PATH.
+
+> If you see `bash not found` or `jq not found` from `install.ps1`, install the
+> missing tool using the commands in the Requirements section above, restart
+> your shell, and re-run.
 
 ## What gets installed
 
