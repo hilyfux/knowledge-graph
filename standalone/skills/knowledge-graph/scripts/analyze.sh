@@ -60,9 +60,12 @@ case "$CMD" in
       for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
         | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10); do
         [ "$d" = "." ] && continue
-        [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && \
-          [ ! -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && \
-          MISSING=$((MISSING + 1))
+        [ "${d#.knowledge-graph}" != "$d" ] && continue
+        [ "${d#.claude}" != "$d" ] && continue
+        [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+        [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+        [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+        MISSING=$((MISSING + 1))
       done
     fi
     if [ "$MISSING" -gt 0 ]; then

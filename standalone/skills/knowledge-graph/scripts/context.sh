@@ -37,24 +37,30 @@ case "$CMD" in
       [ -n "$SNAP_CONTENT" ] && CONTEXT="$CONTEXT\n$SNAP_CONTENT"
     fi
 
-    # Auto-update: trigger when active modules lack CLAUDE.md
+    # Auto-update: trigger when active modules lack CLAUDE.md/SKILL.md.
+    # Append the notice to CONTEXT — do NOT early-exit, otherwise the
+    # work snapshot loaded above is thrown away and the main session
+    # starts blind. Also exclude runtime/infra dirs (false positives).
     if [ -f "$EVENTS" ]; then
       PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
 
-      # Check if any recently active directories are missing CLAUDE.md
       MISSING_NODES=0
       if [ "$PENDING" -ge 5 ]; then
         ACTIVE_DIRS=$(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
           | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10)
         for d in $ACTIVE_DIRS; do
           [ "$d" = "." ] && continue
-          [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING_NODES=$((MISSING_NODES + 1))
+          [ "${d#.knowledge-graph}" != "$d" ] && continue
+          [ "${d#.claude}" != "$d" ] && continue
+          [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+          [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+          [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+          MISSING_NODES=$((MISSING_NODES + 1))
         done
       fi
 
       if [ "$MISSING_NODES" -gt 0 ]; then
-        emit_hook_context "$(json_escape "[kg auto-trigger] $MISSING_NODES active modules lack CLAUDE.md. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update.")"
-        exit 0
+        CONTEXT="$CONTEXT\n[kg auto-trigger] $MISSING_NODES active modules lack CLAUDE.md. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update."
       fi
     fi
 

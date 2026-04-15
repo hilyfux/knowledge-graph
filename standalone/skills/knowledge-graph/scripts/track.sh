@@ -9,9 +9,14 @@ TS=$(date +%s)
 PREFIX="$CLAUDE_PROJECT_DIR/"
 CMD="${1:-write}"
 
-# Guard: skip files outside current project (cross-project edits)
+# Guard: skip files outside current project, plus kg/claude infra.
+# Tracking writes to .knowledge-graph/ creates self-referential pollution
+# (runtime data showing up as "active module"). Tracking .claude/ is noise
+# — infra, not user code.
 is_project_file() {
   case "$1" in
+    "$PREFIX.knowledge-graph/"*) return 1 ;;
+    "$PREFIX.claude/"*) return 1 ;;
     "$PREFIX"*) return 0 ;;
     *) return 1 ;;
   esac
