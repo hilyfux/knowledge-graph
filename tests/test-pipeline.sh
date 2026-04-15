@@ -151,12 +151,121 @@ trap 'rm -rf "$TMPDIR" "$TMPDIR2"' EXIT
 export CLAUDE_PROJECT_DIR="$TMPDIR2"
 mkdir -p "$TMPDIR2/.knowledge-graph"
 OUTPUT=$(bash "$SCRIPT_DIR/context.sh" startup 2>/dev/null || true)
-assert_eq "uninit project emits init message" "true" "$(echo "$OUTPUT" | grep -q '初始化' && echo true || echo false)"
+assert_eq "uninit project emits init message" "true" "$(echo "$OUTPUT" | grep -q 'not initialized' && echo true || echo false)"
 
 # With marker, should not emit init message
 date +%s > "$TMPDIR2/.knowledge-graph/.initialized"
 OUTPUT=$(bash "$SCRIPT_DIR/context.sh" startup 2>/dev/null || true)
-assert_eq "init'd project skips init message" "true" "$(echo "$OUTPUT" | grep -q '初始化' && echo false || echo true)"
+assert_eq "init'd project skips init message" "true" "$(echo "$OUTPUT" | grep -q 'not initialized' && echo false || echo true)"
+
+# ── Test 8: track.sh excludes .knowledge-graph/ and .claude/ (bug C fix) ─────
+echo ""
+echo "Test 8: track.sh excludes runtime/infra paths"
+TMPDIR3=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3"' EXIT
+export CLAUDE_PROJECT_DIR="$TMPDIR3"
+mkdir -p "$TMPDIR3/.knowledge-graph" "$TMPDIR3/.claude" "$TMPDIR3/src"
+EV3="$TMPDIR3/.knowledge-graph/graph-events.jsonl"
+: > "$EV3"
+
+feed() {
+  printf '%s' "$1" | bash "$SCRIPT_DIR/track.sh" write >/dev/null 2>&1 || true
+}
+# tool_name must be Write/Edit for track.sh to append an event
+feed '{"tool_name":"Edit","tool_input":{"file_path":"'"$TMPDIR3"'/.knowledge-graph/foo.jsonl"}}'
+feed '{"tool_name":"Edit","tool_input":{"file_path":"'"$TMPDIR3"'/.claude/settings.json"}}'
+feed '{"tool_name":"Edit","tool_input":{"file_path":"'"$TMPDIR3"'/src/real.js"}}'
+
+# Count matches robustly (grep -c prints "0" and exits 1 on no-match,
+# which || echo 0 would double-emit — use awk+wc instead)
+count_lines() {
+  awk -v pat="$1" '$0 ~ pat' "$2" 2>/dev/null | wc -l | tr -d ' '
+}
+KG_COUNT=$(count_lines '"p":"\.knowledge-graph' "$EV3")
+CL_COUNT=$(count_lines '"p":"\.claude'          "$EV3")
+SRC_COUNT=$(count_lines '"p":"src/'             "$EV3")
+assert_eq ".knowledge-graph/ writes not recorded"  "0" "$KG_COUNT"
+assert_eq ".claude/ writes not recorded"           "0" "$CL_COUNT"
+assert_eq "src/ writes ARE recorded"               "1" "$SRC_COUNT"
+
+# ── Test 9: context.sh startup does NOT early-exit on trigger (bug A fix) ────
+echo ""
+echo "Test 9: context.sh startup preserves snapshot alongside trigger notice"
+TMPDIR4=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4"' EXIT
+export CLAUDE_PROJECT_DIR="$TMPDIR4"
+mkdir -p "$TMPDIR4/.knowledge-graph" "$TMPDIR4/src/undocumented"
+date +%s > "$TMPDIR4/.knowledge-graph/.initialized"
+# Snapshot must exist to test preservation
+printf '# 工作快照 (test)\n## 活跃模块\n- src/undocumented (r:0 w:5)\n' > "$TMPDIR4/.knowledge-graph/work-snapshot.md"
+# Feed 6 write events into a dir lacking CLAUDE.md to trigger MISSING_NODES > 0
+EV4="$TMPDIR4/.knowledge-graph/graph-events.jsonl"
+for i in 1 2 3 4 5 6; do
+  printf '{"e":"w:edit","p":"src/undocumented/file%d.js","t":%d}\n' "$i" "$(date +%s)" >> "$EV4"
+done
+OUT9=$(bash "$SCRIPT_DIR/context.sh" startup 2>/dev/null || true)
+assert_eq "snapshot injected alongside trigger" "true" \
+  "$(echo "$OUT9" | grep -q '工作快照' && echo true || echo false)"
+assert_eq "trigger notice also appended"        "true" \
+  "$(echo "$OUT9" | grep -q 'kg auto-trigger' && echo true || echo false)"
+
+# ── Test 10: analyze.sh auto-detect skips runtime/ghost dirs (bug B+C fix) ───
+echo ""
+echo "Test 10: auto-detect ignores runtime and ghost dirs"
+TMPDIR5=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5"' EXIT
+export CLAUDE_PROJECT_DIR="$TMPDIR5"
+mkdir -p "$TMPDIR5/.knowledge-graph"
+date +%s > "$TMPDIR5/.knowledge-graph/.initialized"
+EV5="$TMPDIR5/.knowledge-graph/graph-events.jsonl"
+for i in 1 2 3 4 5 6; do
+  printf '{"e":"w:edit","p":".knowledge-graph/x.jsonl","t":%d}\n' "$(date +%s)" >> "$EV5"
+done
+for i in 1 2 3; do
+  printf '{"e":"w:edit","p":"ghost-dir/x.js","t":%d}\n' "$(date +%s)" >> "$EV5"
+done
+OUT10=$(bash "$SCRIPT_DIR/analyze.sh" auto-detect 2>/dev/null || true)
+assert_eq "auto-detect says Status: OK (no fake missing)" "true" \
+  "$(echo "$OUT10" | grep -q 'Status: OK' && echo true || echo false)"
+assert_eq "auto-detect does NOT emit '[AUTO] Execute update'" "true" \
+  "$(echo "$OUT10" | grep -q 'Execute update' && echo false || echo true)"
+
+# ── Test 11: blind_spots filter + SKILL.md recognition (analyze) ─────────────
+echo ""
+echo "Test 11: blind_spots excludes SKILL.md dirs and ghost paths"
+mkdir -p "$TMPDIR5/skill-mod" "$TMPDIR5/code-mod"
+printf '# skill-mod\n' > "$TMPDIR5/skill-mod/SKILL.md"
+printf '# code-mod\n' > "$TMPDIR5/code-mod/CLAUDE.md"
+# Generate events that would naively flag all three as blind spots
+: > "$EV5"
+for i in 1 2 3 4 5 6; do
+  printf '{"e":"w:edit","p":"skill-mod/a.sh","t":%d}\n' "$(date +%s)" >> "$EV5"
+  printf '{"e":"r","p":"skill-mod/a.sh","t":%d}\n' "$(date +%s)" >> "$EV5"
+  printf '{"e":"w:edit","p":"code-mod/a.js","t":%d}\n' "$(date +%s)" >> "$EV5"
+  printf '{"e":"r","p":"code-mod/a.js","t":%d}\n' "$(date +%s)" >> "$EV5"
+  printf '{"e":"w:edit","p":"ghost-dir/a.js","t":%d}\n' "$(date +%s)" >> "$EV5"
+  printf '{"e":"r","p":"ghost-dir/a.js","t":%d}\n' "$(date +%s)" >> "$EV5"
+done
+bash "$SCRIPT_DIR/analyze.sh" analyze 2>/dev/null || true
+BLIND=$(jq -r '.blind_spots | join(",")' "$TMPDIR5/.knowledge-graph/graph-analysis.json" 2>/dev/null)
+assert_eq "SKILL.md dir not in blind_spots"  "true" \
+  "$([ "${BLIND/skill-mod/}" = "$BLIND" ] && echo true || echo false)"
+assert_eq "CLAUDE.md dir not in blind_spots" "true" \
+  "$([ "${BLIND/code-mod/}" = "$BLIND" ] && echo true || echo false)"
+assert_eq "ghost dir not in blind_spots"     "true" \
+  "$([ "${BLIND/ghost-dir/}" = "$BLIND" ] && echo true || echo false)"
+
+# ── Test 12: broken_refs dual-resolve + placeholder skip (analyze) ───────────
+echo ""
+echo "Test 12: broken_refs resolves both relative and project-root paths"
+mkdir -p "$TMPDIR5/src/foo"
+printf '# root\n' > "$TMPDIR5/CLAUDE.md"
+printf '# foo\n' > "$TMPDIR5/src/foo/CLAUDE.md"
+printf '# leaf\n- When Changing → @src/foo/CLAUDE.md\n- Placeholder → @{path}/CLAUDE.md\n' \
+  > "$TMPDIR5/code-mod/CLAUDE.md"
+bash "$SCRIPT_DIR/analyze.sh" analyze 2>/dev/null || true
+BROKEN=$(jq -r '.broken_refs | length' "$TMPDIR5/.knowledge-graph/graph-analysis.json" 2>/dev/null)
+assert_eq "cross-module @ref resolves (not broken)" "0" "$BROKEN"
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""

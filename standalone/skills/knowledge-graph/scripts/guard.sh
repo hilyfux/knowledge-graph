@@ -103,6 +103,15 @@ get_prohibitions() {
 save_snapshot() {
   local snapshot="$KG_DATA/work-snapshot.md"
   local events="$KG_DATA/graph-events.jsonl"
+
+  # Anti-overwrite: if WS is empty (e.g. a Stop fires right after /clear reset
+  # WS, before the new session accumulated activity), don't stomp a richer
+  # previous snapshot with a thin one. Keep the rich record until there's
+  # real new activity to summarize.
+  if [ ! -s "$WS" ] && [ -f "$snapshot" ] && grep -q "^## 活跃模块" "$snapshot" 2>/dev/null; then
+    return 0
+  fi
+
   {
     echo "# 工作快照 ($(date '+%m/%d %H:%M'))"
 
@@ -127,6 +136,14 @@ save_snapshot() {
       edited=$(tail -200 "$events" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
         | sort | uniq -c | sort -rn | head -8 | awk '{printf "- %s (%d次)\n", $2, $1}')
       [ -n "$edited" ] && printf '\n## 编辑文件\n%s\n' "$edited"
+    fi
+
+    # Uncommitted changes — strongest "work in progress" signal for Claude
+    if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir &>/dev/null; then
+      local dirty_git
+      dirty_git=$(git -C "$CLAUDE_PROJECT_DIR" status --porcelain 2>/dev/null | head -15)
+      [ -n "$dirty_git" ] && printf '\n## 未提交变更 (work in progress)\n%s\n' \
+        "$(echo "$dirty_git" | sed 's/^/- /')"
     fi
 
     # Recent failures
