@@ -54,3 +54,148 @@ Based on deep study of Claude Code source (cc-haha) and caveman project, 2026-04
 2. @include for knowledge-index (system prompt level) — not hook injection
 3. PreCompact guidance (influence compaction) — not just PostCompact recovery
 4. ≤20 line CLAUDE.md with compression rules — not caveman-compress tool (our files already terse)
+
+---
+
+## Pipeline Diagram
+
+```
+  You code normally with Claude Code
+              |
+              v
+  +-----------------------+
+  | Hooks fire silently   |  PreToolUse(Read), PostToolUse(Write/Edit),
+  | on every operation    |  SessionStart, PreCompact, PostCompact, Stop
+  +-----------+-----------+
+              |
+    +---------+---------+
+    |                   |
+    v                   v
+  +-------------+  +------------------+
+  | track.sh    |  | Prediction Cache |  First access -> predict related
+  | records     |  | (300s TTL)       |  modules from co-change history.
+  | events      |  +--------+---------+  Repeat access -> cache hit, skip.
+  +------+------+           |
+         |                  v
+         |           additionalContext
+         |           -> Claude sees related
+         |             module pitfalls
+         |
+         |  Session end (Stop hook):
+         |  -> save work snapshot
+         |  -> rotate events (>500 -> keep 300)
+         |  -> background analysis
+         |
+         |  /knowledge-graph update (manual):
+         v
+  +-----------------------+
+  | analyze.sh            |  Pure bash: stats, blind spots
+  | infer.sh              |  Pure bash: co-change, sequences, decay
+  | (zero LLM tokens)     |
+  +-----------+-----------+
+              |
+              v
+  +-----------------------+
+  | LLM reads analysis,   |  Only step using LLM tokens
+  | writes CLAUDE.md      |  Evidence-based: no proof = no rule
+  +-----------+-----------+
+              |
+              v
+  +-----------------------+
+  | knowledge-index.md    |  @include in .claude/CLAUDE.md
+  | (system prompt level) |  Survives clear + compact natively
+  +-----------------------+
+```
+
+## Hook Reference
+
+| Hook | Script | What it does |
+|------|--------|-------------|
+| `PreToolUse` (Read) | `track.sh` | Records reads. On first access to a module: predicts related modules and injects their prohibitions. On repeat access: ~5ms no-op. |
+| `PostToolUse` (Write/Edit) | `track.sh` | Records changes. Updates working set. Invalidates prediction cache for changed module. |
+| `PostToolUseFailure` | `track.sh` | Records failures + error messages as learning opportunities. |
+| `InstructionsLoaded` | `track.sh` | Records which `CLAUDE.md` files Claude loaded. |
+| `UserPromptSubmit` | `prompt-trigger.sh` | Only responds when user explicitly mentions knowledge graph. |
+| `SessionStart` | `context.sh` | Resets working set. Injects previous work snapshot + update suggestion (if stale). |
+| `PreCompact` | `context.sh` | Saves work snapshot. Tells compactor which specific modules to preserve. |
+| `PostCompact` | `context.sh` | Restores snapshot + working set prohibitions after compaction. |
+| `SubagentStart` | `context.sh` | Injects project prohibitions + main session's active modules into sub-agents. |
+| `Stop` | `analyze.sh` | Saves work snapshot. Rotates events. Runs background analysis. |
+
+## Inference Engine (`infer.sh`)
+
+Pure bash + jq. Zero LLM tokens. Runs during `update`.
+
+| Command | What it discovers |
+|---------|-------------------|
+| `infer.sh cochange` | Files modified together within 10-min windows — implicit dependencies |
+| `infer.sh sequences` | Repeated read->write patterns — "always check X before changing Y" |
+| `infer.sh decay` | Rule effectiveness: effective / ineffective / stale |
+| `infer.sh predict` | Given a file, predicts which modules will be needed next (bounded to 300 recent events) |
+
+## Context Survival Matrix
+
+| Content | `clear` | `compact` | Mechanism |
+|---------|---------|-----------|-----------|
+| Knowledge index | Survives | Survives | `@include` in system prompt |
+| Module CLAUDE.md | Re-loaded on access | Re-loaded on access | Native nested traversal |
+| **Working state** | **Restored from snapshot** | **Restored from snapshot** | **Stop/PreCompact save + SessionStart inject** |
+| **Active module prohibitions** | **Re-loaded on access** | **Pinned by working set** | **Working set tracking** |
+| Event data | On disk | On disk | `.knowledge-graph/` — never enters context window |
+
+## Source Project Layout
+
+```
+knowledge-graph/                       <- Source repo
+├── standalone/
+│   ├── install.sh                     <- Installer + migration + hook merge
+│   └── skills/
+│       └── knowledge-graph/
+│           ├── SKILL.md               <- Skill interface (4 modes)
+│           ├── plugin.json            <- Plugin manifest
+│           └── scripts/
+│               ├── guard.sh           <- Shared infrastructure + working set + cache
+│               ├── track.sh           <- Event recording + prediction
+│               ├── context.sh         <- Session lifecycle (startup/compact/resume)
+│               ├── analyze.sh         <- Project scan + analysis + stop snapshot
+│               ├── infer.sh           <- Inference engine (co-change/sequences/decay/predict)
+│               ├── mcp-server.sh      <- MCP stdio server (4 tools)
+│               └── prompt-trigger.sh  <- Explicit KG mention detection
+├── tests/
+│   └── test-pipeline.sh               <- 15 automated tests
+├── docs/
+│   ├── architecture-notes.md
+│   ├── configuration.md
+│   ├── installation.md
+│   └── faq.md
+└── examples/
+```
+
+## Installed Project Layout
+
+After installation in a target project:
+
+```
+your-project/
+├── .knowledge-graph/                  <- Runtime data (gitignored)
+│   ├── graph-events.jsonl             <- Event log (auto-rotated at 500 lines)
+│   ├── graph-events-archive.jsonl     <- Archived events
+│   ├── graph-analysis.json            <- Analysis cache
+│   ├── knowledge-index.md             <- Global knowledge index
+│   ├── work-snapshot.md               <- Last session's working state
+│   ├── working-set.dat                <- Current session's active modules
+│   ├── pred-cache.dat                 <- Prediction cache (300s TTL)
+│   └── .initialized                   <- Init marker
+├── .claude/
+│   ├── CLAUDE.md                      <- @include -> knowledge-index.md
+│   ├── settings.json                  <- Hooks auto-merged
+│   ├── rules/                         <- Cross-module rules
+│   └── skills/knowledge-graph/        <- Scripts only
+├── .mcp.json                          <- MCP server registered
+├── src/
+│   ├── auth/CLAUDE.md                 <- Module knowledge (committed)
+│   ├── api/CLAUDE.md
+│   └── ...
+└── CLAUDE.md                          <- Root project knowledge
+```
+
