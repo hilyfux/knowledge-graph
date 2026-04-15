@@ -60,7 +60,9 @@ case "$CMD" in
       for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
         | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10); do
         [ "$d" = "." ] && continue
-        [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING=$((MISSING + 1))
+        [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && \
+          [ ! -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && \
+          MISSING=$((MISSING + 1))
       done
     fi
     if [ "$MISSING" -gt 0 ]; then
@@ -179,7 +181,7 @@ case "$CMD" in
     ')
 
     STALE_LIST=""
-    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
+    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
       -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
       REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
       DIR=$(dirname "$REL")
@@ -190,11 +192,17 @@ case "$CMD" in
     [ -z "$STALE_LIST" ] && STALE_JSON="[]"
 
     BROKEN_LIST=""
-    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
+    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
       -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
-      for ref in $(grep -oE '@[^[:space:]]+CLAUDE\.md' "$cmd_file" 2>/dev/null); do
-        FULL="$(dirname "$cmd_file")/${ref#@}"
-        if [ ! -f "$FULL" ]; then
+      for ref in $(grep -oE '@[^[:space:]]+(CLAUDE|SKILL)\.md' "$cmd_file" 2>/dev/null \
+        | grep -v '{'); do
+        # Skip template placeholders like `@{path}/CLAUDE.md` — those are docstring
+        # format examples, not real references.
+        REF_PATH="${ref#@}"
+        # Resolve both ways: relative to the node's directory, and from project root.
+        # Cross-module refs like `@src/foo/CLAUDE.md` use project-root form.
+        if [ ! -f "$(dirname "$cmd_file")/$REF_PATH" ] && \
+           [ ! -f "$CLAUDE_PROJECT_DIR/$REF_PATH" ]; then
           REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
           BROKEN_LIST="$BROKEN_LIST\"$REL: $ref\","
         fi
@@ -202,6 +210,20 @@ case "$CMD" in
     done
     BROKEN_JSON="[${BROKEN_LIST%,}]"
     [ -z "$BROKEN_LIST" ] && BROKEN_JSON="[]"
+
+    # Filter blind_spots by filesystem — jq only knows about `i` events,
+    # which miss dirs whose CLAUDE.md/SKILL.md exists but wasn't read this session.
+    # Also drop ghost paths from stale events where the directory no longer exists.
+    BLIND_FILTERED=""
+    for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      BLIND_FILTERED="$BLIND_FILTERED\"$d\","
+    done
+    BLIND_JSON="[${BLIND_FILTERED%,}]"
+    [ -z "$BLIND_FILTERED" ] && BLIND_JSON="[]"
+    CORE=$(echo "$CORE" | jq --argjson b "$BLIND_JSON" '.blind_spots = $b')
 
     COCHANGE_JSON="[]"
     FIXES=""

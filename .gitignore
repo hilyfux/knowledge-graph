@@ -8,3 +8,4 @@ standalone/skills/knowledge-graph/data/
 .knowledge-graph/
 .mcp.json
 .playwright-mcp/
+.playwright/
