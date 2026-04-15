@@ -6,6 +6,70 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-04-15
+
+### Added — Read-size guard (prevent 25K-token failures before they happen)
+
+Live monitoring on a real project (web-ai) showed a recurring pattern:
+agent reads a 30-50KB Vue / i18n file, Read tool hits its 25K-token
+ceiling, call fails, agent retries, fails again. Multiple round-trips
+wasted per file.
+
+- `track.sh read` (PreToolUse hook) now stat's the target before the
+  Read executes. If the file exceeds `KG_READ_SIZE_WARN_KB` (default
+  **40KB**, env-overridable), injects a `[kg:size-guard]` hint into
+  the additionalContext:
+  `"file X is ~60KB — Read will likely hit the token ceiling. Prefer
+  Grep to locate, then Read with offset/limit, or split the read."`
+- Combined with the existing prediction output — a single hook
+  response carries both the size warning and related-module
+  prohibitions. First-access prediction still fires; repeat access
+  still gets the size warning (the file may have grown since last
+  read).
+
+### Added — Channels + event schema + corrupt-line tolerance
+
+Addresses feedback from a silly-code tracker build: the general-purpose
+`work-snapshot.md` is the wrong primitive when a caller wants its own
+domain-specific stream; there was no schema contract, so bad writers
+could poison the log; readers had ad-hoc tolerance only.
+
+- **Channels**: every event stream now has a name. The default channel
+  keeps `graph-events.jsonl` + `work-snapshot.md` (backward compat).
+  Named channels get `{channel}-events.jsonl` + `{channel}-snapshot.md`.
+  Callers can run parallel streams without colliding.
+- **Schema v1** (`docs/events-schema.md`): formal event shape,
+  required/optional fields, enum values for `e`. Writers must pass
+  validation; readers filter through `filter_valid_events`.
+- **Corrupt-line tolerance**: `filter_valid_events` helper in
+  `guard.sh` drops malformed JSON, missing fields, unknown event
+  types. `save-channel-snapshot` surfaces the dropped count so
+  poisoning is visible.
+- **New helpers** in `guard.sh`: `channel_events_path`,
+  `channel_snapshot_path`, `log_channel_event`, `is_valid_event_line`,
+  `filter_valid_events`.
+- **New CLI**: `analyze.sh save-channel-snapshot <channel>`,
+  `analyze.sh validate-events [channel]`.
+
+### Added — Pure-bash knowledge-index generator
+
+The LLM-driven index regeneration kept shortcutting to path echoes
+(`bin/: bin/`), producing a high-token, zero-signal index. Prompt
+tightening didn't hold.
+
+- **`analyze.sh build-index`**: pure-bash generator. Extracts a topic
+  keyword from each node's `# Name — topic line` title (or first
+  Prohibition bullet as fallback), emits `{path}: {base}/{keyword}`
+  ≤15 chars. Deterministic every run.
+- **SKILL.md init step 6**: calls the bash generator instead of
+  prompting the LLM for prose.
+- Sample output from silly-code:
+  `bin/CLAUDE.md: bin/launcher` (was `bin/: bin/`),
+  `src/CLAUDE.md: src/legacy`, `pipeline/CLAUDE.md: pipeline/patch`.
+- Known weakness: module titles without a `— topic line` suffix fall
+  back to `basename/node`, flagged in the generator output so you
+  know which titles to improve.
+
 ## [1.2.2] - 2026-04-15
 
 ### Fixed — The "kg was running but invisible" pass

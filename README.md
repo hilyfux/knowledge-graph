@@ -71,8 +71,10 @@ From that point on: silent tracking, distributed `CLAUDE.md` knowledge nodes per
 
 - **Cross-agent memory** — works natively in Claude Code (hooks); works in Codex / Cursor / Windsurf / any MCP client through the bundled server (7 tools + 22 resources auto-exposed)
 - **Session-to-session continuity** — snapshot survives `clear` and `compact`; includes `git status` uncommitted changes so the agent knows what's still in progress, not just what was committed
+- **Predict errors before they happen** — co-change prediction preloads related-module prohibitions on first access; **Read size-guard** warns before a 25K-token Read hits its ceiling, so the agent knows to Grep + partial-read instead of burning a round-trip
 - **Auto-discovered dependencies** from real co-change patterns — observe work, infer patterns, promote only evidence-backed rules
 - **Zero-interrupt workflow** — heavy analysis runs at session boundaries, not during coding
+- **Named event channels + schema** — parallel streams for domain-specific trackers (`{channel}-events.jsonl`) with formal event shape and corrupt-line tolerance. See [events-schema.md](docs/events-schema.md).
 - **Zero dependencies beyond `jq`** — no Docker, no Neo4j, no Python, no services, no daemon. Inspectable. Versionable. No lock-in.
 
 ---
@@ -186,6 +188,7 @@ Auto-registered in `.mcp.json` during installation.
 - [Installation](docs/installation.md) — platform-specific setup (macOS / Linux / Windows / WSL)
 - [Configuration](docs/configuration.md) — env vars and tuning
 - [Architecture](docs/architecture-notes.md) — hook flow, prediction engine, pipeline diagram, installed layout
+- [Events Schema](docs/events-schema.md) — channel concept + event shape + tolerance guarantees
 - [FAQ](docs/faq.md) — common questions
 - [Changelog](CHANGELOG.md) — release history
 
