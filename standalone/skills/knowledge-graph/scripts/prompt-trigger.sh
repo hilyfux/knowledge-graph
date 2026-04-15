@@ -26,7 +26,12 @@ if [ ! -f "$TRIGGER_MARKER" ] && [ -f "$KG_DATA/.initialized" ] && [ -f "$EVENTS
     for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
       | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10); do
       [ "$d" = "." ] && continue
-      [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING=$((MISSING + 1))
+      [ "${d#.knowledge-graph}" != "$d" ] && continue
+      [ "${d#.claude}" != "$d" ] && continue
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      MISSING=$((MISSING + 1))
     done
     if [ "$MISSING" -gt 0 ]; then
       printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[kg auto-trigger] %d active modules lack knowledge nodes (%d events pending). Before starting user task, invoke Skill tool (skill: knowledge-graph) to run auto-update. This takes ~30 seconds and will improve code quality for this session."}}\n' "$MISSING" "$PENDING"
