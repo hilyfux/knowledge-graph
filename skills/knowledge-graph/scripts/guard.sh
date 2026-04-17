@@ -16,6 +16,10 @@ WS_WRITE_SET="$KG_DATA/ws-writes.set"
 # Prediction cache: avoids re-running infer.sh predict for known dirs
 # Format: {timestamp}\t{dir}\t{pred1,pred2,...}   (one entry per dir, 300s TTL)
 PRED_CACHE="$KG_DATA/pred-cache.dat"
+# Mid-session analysis throttle: avoids stale graph-analysis.json during long
+# sessions without relying solely on the Stop hook.
+ANALYZE_LOCK="$KG_DATA/.analyzing"
+ANALYZE_STAMP="$KG_DATA/.last-analyze-trigger"
 
 # ── JSON / Hook helpers ───────────────────────────────────────────────────────
 json_escape() { printf '%s' "$1" | jq -Rs .; }
@@ -23,6 +27,18 @@ json_escape() { printf '%s' "$1" | jq -Rs .; }
 emit_hook_context() {
   local event="${2:-SessionStart}"
   echo "{\"hookSpecificOutput\":{\"hookEventName\":\"$event\",\"additionalContext\":$1}}"
+}
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$seconds" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$seconds" "$@"
+  else
+    "$@"
+  fi
 }
 
 # ── Working Set ───────────────────────────────────────────────────────────────
@@ -103,6 +119,15 @@ get_prohibitions() {
 save_snapshot() {
   local snapshot="$KG_DATA/work-snapshot.md"
   local events="$KG_DATA/graph-events.jsonl"
+
+  # Anti-overwrite: if WS is empty (e.g. a Stop fires right after /clear reset
+  # WS, before the new session accumulated activity), don't stomp a richer
+  # previous snapshot with a thin one. Keep the rich record until there's
+  # real new activity to summarize.
+  if [ ! -s "$WS" ] && [ -f "$snapshot" ] && grep -q "^## 活跃模块" "$snapshot" 2>/dev/null; then
+    return 0
+  fi
+
   {
     echo "# 工作快照 ($(date '+%m/%d %H:%M'))"
 
@@ -129,11 +154,39 @@ save_snapshot() {
       [ -n "$edited" ] && printf '\n## 编辑文件\n%s\n' "$edited"
     fi
 
+    # Uncommitted changes — strongest "work in progress" signal for Claude
+    if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir &>/dev/null; then
+      local dirty_git
+      dirty_git=$(git -C "$CLAUDE_PROJECT_DIR" status --porcelain 2>/dev/null \
+        | grep -vE '^[ MARCUD?!]{2} (\.knowledge-graph/|\.claude/|\.playwright/)' \
+        | grep -vE '^[ MARCUD?!]{2} \.claude/worktrees/' \
+        | head -15)
+      [ -n "$dirty_git" ] && printf '\n## 未提交变更 (work in progress)\n%s\n' \
+        "$(echo "$dirty_git" | sed 's/^/- /')"
+    fi
+
     # Recent failures
     if [ -f "$events" ] && [ -s "$events" ]; then
-      local fails
-      fails=$(tail -200 "$events" | jq -r 'select(.e == "f") | "\(.tool): \(.err)"' 2>/dev/null \
-        | sort -u | head -3)
+      local fails active_dirs active_json
+      active_dirs=$(ws_top 8)
+      active_json=$(printf '%s\n' "$active_dirs" | jq -R . | jq -s . 2>/dev/null)
+      [ -z "$active_json" ] && active_json='[]'
+
+      fails=$(tail -200 "$events" | jq -r --argjson dirs "$active_json" '
+        [select(.e == "f")
+         | . as $f
+         | ($f.p // "") as $p
+         | ($p | split("/") | if length > 1 then .[:-1] | join("/") else if $p == "" then "" else "." end end) as $dir
+         | select($p != "" and ($dirs | index($dir)))
+         | "\($p): \($f.err)"
+        ] | unique | .[:3][]
+      ' 2>/dev/null)
+
+      if [ -z "$fails" ]; then
+        fails=$(tail -200 "$events" | jq -r 'select(.e == "f") | if (.p // "") != "" then "\(.p): \(.err)" else "\(.tool): \(.err)" end' 2>/dev/null \
+          | sort -u | head -3)
+      fi
+
       [ -n "$fails" ] && printf '\n## 遇到的问题\n%s\n' "$(echo "$fails" | sed 's/^/- /')"
     fi
 
@@ -144,6 +197,84 @@ save_snapshot() {
       [ -n "$commits" ] && printf '\n## 本次提交\n%s\n' "$(echo "$commits" | sed 's/^/- /')"
     fi
   } > "$snapshot"
+}
+
+# ── Channels + event schema (v1.3) ────────────────────────────────────────────
+# A "channel" is a logical stream of events + snapshot. The default channel
+# is the one the hooks use for general work tracking (graph-events.jsonl,
+# work-snapshot.md). Named channels let callers (e.g. silly-code's upstream-
+# upgrade tracker) maintain their own parallel stream without colliding
+# with, or corrupting, the general work snapshot.
+#
+# Default channel            → graph-events.jsonl + work-snapshot.md
+# Named channel "upgrade"    → upgrade-events.jsonl + upgrade-snapshot.md
+
+channel_events_path() {
+  local ch=${1:-}
+  case "$ch" in
+    ''|default|work) echo "$KG_DATA/graph-events.jsonl" ;;
+    *)               echo "$KG_DATA/${ch}-events.jsonl" ;;
+  esac
+}
+
+channel_snapshot_path() {
+  local ch=${1:-}
+  case "$ch" in
+    ''|default|work) echo "$KG_DATA/work-snapshot.md" ;;
+    *)               echo "$KG_DATA/${ch}-snapshot.md" ;;
+  esac
+}
+
+# Event schema (v1):
+#   required: e (enum: w:new|w:edit|r|f|i), p (non-empty string), t (number)
+#   optional: tool (string), err (string)
+# Readers that care about correctness should filter with is_valid_event_line
+# or pipe through filter_valid_events. Writers should use log_channel_event
+# which validates before appending.
+
+is_valid_event_line() {
+  local line=$1
+  [ -z "$line" ] && return 1
+  printf '%s' "$line" | jq -e '
+    (type == "object") and
+    has("e") and (.e | type == "string") and (.e | test("^(w:new|w:edit|r|f|i)$")) and
+    has("p") and (.p | type == "string") and (.p | length > 0) and
+    has("t") and (.t | type == "number")
+  ' >/dev/null 2>&1
+}
+
+filter_valid_events() {
+  # stdin: one JSON per line (possibly malformed)
+  # stdout: only lines that pass schema validation
+  while IFS= read -r line; do
+    if is_valid_event_line "$line"; then
+      printf '%s\n' "$line"
+    fi
+  done
+}
+
+log_channel_event() {
+  # Usage: log_channel_event <channel> <event_type> <path> [tool] [err]
+  # Builds a JSON event, validates, appends to the channel's events file.
+  local ch=$1 et=$2 p=$3 tool=${4:-} err=${5:-}
+  [ -z "$et" ] || [ -z "$p" ] && return 1
+  local ts target event_json
+  ts=$(date +%s)
+  target=$(channel_events_path "$ch")
+  [ -d "$(dirname "$target")" ] || mkdir -p "$(dirname "$target")"
+  if [ -n "$tool" ] || [ -n "$err" ]; then
+    event_json=$(jq -nc --arg e "$et" --arg p "$p" --argjson t "$ts" \
+      --arg tool "$tool" --arg err "$err" \
+      '{e:$e, p:$p, t:$t} + (if $tool != "" then {tool:$tool} else {} end) + (if $err != "" then {err:$err} else {} end)')
+  else
+    event_json=$(jq -nc --arg e "$et" --arg p "$p" --argjson t "$ts" \
+      '{e:$e, p:$p, t:$t}')
+  fi
+  if is_valid_event_line "$event_json"; then
+    printf '%s\n' "$event_json" >> "$target"
+    return 0
+  fi
+  return 1
 }
 
 # ── Shared: inject working set module prohibitions ────────────────────────────

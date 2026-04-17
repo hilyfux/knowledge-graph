@@ -73,7 +73,7 @@ From that point on: silent tracking, distributed `CLAUDE.md` knowledge nodes per
 - **Session-to-session continuity** — snapshot survives `clear` and `compact`; includes `git status` uncommitted changes so the agent knows what's still in progress, not just what was committed
 - **Predict errors before they happen** — co-change prediction preloads related-module prohibitions on first access; **Read size-guard** warns before a 25K-token Read hits its ceiling, so the agent knows to Grep + partial-read instead of burning a round-trip
 - **Auto-discovered dependencies** from real co-change patterns — observe work, infer patterns, promote only evidence-backed rules
-- **Zero-interrupt workflow** — heavy analysis runs at session boundaries, not during coding
+- **Zero-interrupt workflow** — heavy analysis mostly runs at session boundaries; long sessions get a throttled background refresh so `graph-analysis.json` does not go stale
 - **Named event channels + schema** — parallel streams for domain-specific trackers (`{channel}-events.jsonl`) with formal event shape and corrupt-line tolerance. See [events-schema.md](docs/events-schema.md).
 - **Zero dependencies beyond `jq`** — no Docker, no Neo4j, no Python, no services, no daemon. Inspectable. Versionable. No lock-in.
 
@@ -95,7 +95,7 @@ From that point on: silent tracking, distributed `CLAUDE.md` knowledge nodes per
 
 Hooks fire silently during your normal Claude Code workflow:
 
-- **Read / Write** → events recorded in ~3ms; first access to a module triggers a co-change prediction that pre-loads related module prohibitions
+- **Read / Write** → events recorded in ~3ms; first access to a module triggers a co-change prediction that pre-loads related module prohibitions; long write-heavy sessions also trigger a throttled background refresh of `graph-analysis.json`
 - **SessionStart / PostCompact** → injects the last work snapshot so the agent picks up where it left off
 - **Stop** → saves the snapshot, rotates the event log, runs background analysis
 

@@ -42,6 +42,24 @@ case "$CMD" in
 
     # Update working set
     ws_touch "$TS" "$TARGET_DIR" "w"
+
+    # Mid-session analysis trigger: long sessions may never hit Stop, so keep
+    # graph-analysis.json reasonably fresh once event backlog grows. Fire in the
+    # background, throttled by age + lock to stay within hook timeout budget.
+    LINE_COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+    LAST_ANALYZE=0
+    [ -f "$ANALYZE_STAMP" ] && LAST_ANALYZE=$(cat "$ANALYZE_STAMP" 2>/dev/null | tr -d ' ')
+    [ -z "$LAST_ANALYZE" ] && LAST_ANALYZE=0
+    ANALYZE_AGE=$((TS - LAST_ANALYZE))
+    if [ "$LINE_COUNT" -ge 50 ] && [ "$ANALYZE_AGE" -ge 300 ] && [ ! -f "$ANALYZE_LOCK" ]; then
+      printf '%s\n' "$TS" > "$ANALYZE_STAMP" 2>/dev/null
+      touch "$ANALYZE_LOCK" 2>/dev/null
+      (
+        trap 'rm -f "$ANALYZE_LOCK" 2>/dev/null' EXIT
+        env CLAUDE_PROJECT_DIR="$CLAUDE_PROJECT_DIR" run_with_timeout 15 bash "$SCRIPT_DIR/analyze.sh" analyze > /dev/null 2>&1
+      ) &
+      disown
+    fi
     ;;
 
   pre-write)

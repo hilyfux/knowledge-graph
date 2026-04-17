@@ -9,9 +9,14 @@ TS=$(date +%s)
 PREFIX="$CLAUDE_PROJECT_DIR/"
 CMD="${1:-write}"
 
-# Guard: skip files outside current project (cross-project edits)
+# Guard: skip files outside current project, plus kg/claude infra.
+# Tracking writes to .knowledge-graph/ creates self-referential pollution
+# (runtime data showing up as "active module"). Tracking .claude/ is noise
+# — infra, not user code.
 is_project_file() {
   case "$1" in
+    "$PREFIX.knowledge-graph/"*) return 1 ;;
+    "$PREFIX.claude/"*) return 1 ;;
     "$PREFIX"*) return 0 ;;
     *) return 1 ;;
   esac
@@ -37,6 +42,24 @@ case "$CMD" in
 
     # Update working set
     ws_touch "$TS" "$TARGET_DIR" "w"
+
+    # Mid-session analysis trigger: long sessions may never hit Stop, so keep
+    # graph-analysis.json reasonably fresh once event backlog grows. Fire in the
+    # background, throttled by age + lock to stay within hook timeout budget.
+    LINE_COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
+    LAST_ANALYZE=0
+    [ -f "$ANALYZE_STAMP" ] && LAST_ANALYZE=$(cat "$ANALYZE_STAMP" 2>/dev/null | tr -d ' ')
+    [ -z "$LAST_ANALYZE" ] && LAST_ANALYZE=0
+    ANALYZE_AGE=$((TS - LAST_ANALYZE))
+    if [ "$LINE_COUNT" -ge 50 ] && [ "$ANALYZE_AGE" -ge 300 ] && [ ! -f "$ANALYZE_LOCK" ]; then
+      printf '%s\n' "$TS" > "$ANALYZE_STAMP" 2>/dev/null
+      touch "$ANALYZE_LOCK" 2>/dev/null
+      (
+        trap 'rm -f "$ANALYZE_LOCK" 2>/dev/null' EXIT
+        env CLAUDE_PROJECT_DIR="$CLAUDE_PROJECT_DIR" run_with_timeout 15 bash "$SCRIPT_DIR/analyze.sh" analyze > /dev/null 2>&1
+      ) &
+      disown
+    fi
     ;;
 
   pre-write)
@@ -86,11 +109,32 @@ case "$CMD" in
     # Record event
     echo "{\"e\":\"r\",\"p\":\"$REL\",\"t\":$TS}" >> "$EVENTS" 2>/dev/null
 
+    # Large-file guard: warn before the Read tool hits its 25K-token ceiling
+    # and burns a round-trip. Override via env KG_READ_SIZE_WARN_KB (default 40).
+    SIZE_WARN=""
+    if [ -f "$FILE_PATH" ]; then
+      FILE_BYTES=$(stat -f %z "$FILE_PATH" 2>/dev/null || stat -c %s "$FILE_PATH" 2>/dev/null || echo 0)
+      THRESHOLD_KB=${KG_READ_SIZE_WARN_KB:-40}
+      THRESHOLD_BYTES=$((THRESHOLD_KB * 1024))
+      if [ "$FILE_BYTES" -gt "$THRESHOLD_BYTES" ] 2>/dev/null; then
+        FILE_KB=$((FILE_BYTES / 1024))
+        SIZE_WARN="[kg:size-guard] $REL is ~${FILE_KB}KB — Read will likely hit the token ceiling. Prefer Grep to locate, then Read with offset/limit, or split the read. "
+      fi
+    fi
+
     # Skip prediction if module already accessed this session
     FIRST_ACCESS=true
     ws_is_paged_in "$TARGET_DIR" && FIRST_ACCESS=false
     ws_touch "$TS" "$TARGET_DIR" "r"
-    [ "$FIRST_ACCESS" = false ] && exit 0
+
+    # On repeat access, skip prediction but still surface the size warning.
+    if [ "$FIRST_ACCESS" = false ]; then
+      if [ -n "$SIZE_WARN" ]; then
+        ESCAPED=$(printf '%s' "$SIZE_WARN" | sed 's/"/\\"/g' | tr '\n' ' ')
+        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$ESCAPED"
+      fi
+      exit 0
+    fi
 
     # Check prediction cache (single call — capture output and test exit code)
     PRED_DIRS=$(tlb_get "$TARGET_DIR" "$TS") || {
@@ -102,19 +146,24 @@ case "$CMD" in
         tlb_set "$TS" "$TARGET_DIR" "$PRED_CSV"
       fi
     }
-    [ -z "$PRED_DIRS" ] && exit 0
 
-    # Prefetch: inject predicted module prohibitions
+    # Prefetch: inject predicted module prohibitions (may be empty)
     CONTEXT=""
-    while IFS= read -r pdir; do
-      [ -z "$pdir" ] && continue
-      RULES=$(get_prohibitions "$CLAUDE_PROJECT_DIR/$pdir/CLAUDE.md" 3)
-      [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}\n"
-    done <<< "$PRED_DIRS"
+    if [ -n "$PRED_DIRS" ]; then
+      while IFS= read -r pdir; do
+        [ -z "$pdir" ] && continue
+        RULES=$(get_prohibitions "$CLAUDE_PROJECT_DIR/$pdir/CLAUDE.md" 3)
+        [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}\n"
+      done <<< "$PRED_DIRS"
+    fi
 
-    if [ -n "$CONTEXT" ]; then
-      ESCAPED=$(printf '%s' "$CONTEXT" | sed 's/"/\\"/g' | tr '\n' ' ')
-      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"[Related] %s"}}\n' "$ESCAPED"
+    # Combine size warning + related-module prohibitions into one hook output
+    COMBINED=""
+    [ -n "$SIZE_WARN" ]   && COMBINED="$SIZE_WARN"
+    [ -n "$CONTEXT" ]     && COMBINED="${COMBINED}[Related] ${CONTEXT}"
+    if [ -n "$COMBINED" ]; then
+      ESCAPED=$(printf '%s' "$COMBINED" | sed 's/"/\\"/g' | tr '\n' ' ')
+      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$ESCAPED"
     fi
     ;;
 

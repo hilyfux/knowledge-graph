@@ -6,6 +6,19 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed — Long sessions keep analysis and snapshots fresher
+
+- `track.sh write` now triggers a throttled background refresh of
+  `graph-analysis.json` during long write-heavy sessions, instead of
+  waiting only for the Stop hook.
+- Added `run_with_timeout()` in `guard.sh` so the refresh path works on
+  macOS setups that do not provide `timeout` but may provide `gtimeout`.
+- Background refresh now clears `ANALYZE_LOCK` on shell exit, avoiding a
+  stale lock after abnormal subprocess termination.
+- `save_snapshot()` filters `git status` noise from `.knowledge-graph/`,
+  `.claude/`, `.playwright/`, and prefers active-module failures when
+  rendering the `## 遇到的问题` section.
+
 ## [1.3.0] - 2026-04-15
 
 ### Added — Read-size guard (prevent 25K-token failures before they happen)

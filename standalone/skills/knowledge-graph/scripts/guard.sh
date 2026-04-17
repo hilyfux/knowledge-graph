@@ -16,6 +16,10 @@ WS_WRITE_SET="$KG_DATA/ws-writes.set"
 # Prediction cache: avoids re-running infer.sh predict for known dirs
 # Format: {timestamp}\t{dir}\t{pred1,pred2,...}   (one entry per dir, 300s TTL)
 PRED_CACHE="$KG_DATA/pred-cache.dat"
+# Mid-session analysis throttle: avoids stale graph-analysis.json during long
+# sessions without relying solely on the Stop hook.
+ANALYZE_LOCK="$KG_DATA/.analyzing"
+ANALYZE_STAMP="$KG_DATA/.last-analyze-trigger"
 
 # ── JSON / Hook helpers ───────────────────────────────────────────────────────
 json_escape() { printf '%s' "$1" | jq -Rs .; }
@@ -23,6 +27,18 @@ json_escape() { printf '%s' "$1" | jq -Rs .; }
 emit_hook_context() {
   local event="${2:-SessionStart}"
   echo "{\"hookSpecificOutput\":{\"hookEventName\":\"$event\",\"additionalContext\":$1}}"
+}
+
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  if command -v timeout >/dev/null 2>&1; then
+    timeout "$seconds" "$@"
+  elif command -v gtimeout >/dev/null 2>&1; then
+    gtimeout "$seconds" "$@"
+  else
+    "$@"
+  fi
 }
 
 # ── Working Set ───────────────────────────────────────────────────────────────
@@ -141,16 +157,36 @@ save_snapshot() {
     # Uncommitted changes — strongest "work in progress" signal for Claude
     if command -v git &>/dev/null && git -C "$CLAUDE_PROJECT_DIR" rev-parse --git-dir &>/dev/null; then
       local dirty_git
-      dirty_git=$(git -C "$CLAUDE_PROJECT_DIR" status --porcelain 2>/dev/null | head -15)
+      dirty_git=$(git -C "$CLAUDE_PROJECT_DIR" status --porcelain 2>/dev/null \
+        | grep -vE '^[ MARCUD?!]{2} (\.knowledge-graph/|\.claude/|\.playwright/)' \
+        | grep -vE '^[ MARCUD?!]{2} \.claude/worktrees/' \
+        | head -15)
       [ -n "$dirty_git" ] && printf '\n## 未提交变更 (work in progress)\n%s\n' \
         "$(echo "$dirty_git" | sed 's/^/- /')"
     fi
 
     # Recent failures
     if [ -f "$events" ] && [ -s "$events" ]; then
-      local fails
-      fails=$(tail -200 "$events" | jq -r 'select(.e == "f") | "\(.tool): \(.err)"' 2>/dev/null \
-        | sort -u | head -3)
+      local fails active_dirs active_json
+      active_dirs=$(ws_top 8)
+      active_json=$(printf '%s\n' "$active_dirs" | jq -R . | jq -s . 2>/dev/null)
+      [ -z "$active_json" ] && active_json='[]'
+
+      fails=$(tail -200 "$events" | jq -r --argjson dirs "$active_json" '
+        [select(.e == "f")
+         | . as $f
+         | ($f.p // "") as $p
+         | ($p | split("/") | if length > 1 then .[:-1] | join("/") else if $p == "" then "" else "." end end) as $dir
+         | select($p != "" and ($dirs | index($dir)))
+         | "\($p): \($f.err)"
+        ] | unique | .[:3][]
+      ' 2>/dev/null)
+
+      if [ -z "$fails" ]; then
+        fails=$(tail -200 "$events" | jq -r 'select(.e == "f") | if (.p // "") != "" then "\(.p): \(.err)" else "\(.tool): \(.err)" end' 2>/dev/null \
+          | sort -u | head -3)
+      fi
+
       [ -n "$fails" ] && printf '\n## 遇到的问题\n%s\n' "$(echo "$fails" | sed 's/^/- /')"
     fi
 
