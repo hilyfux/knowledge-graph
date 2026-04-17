@@ -162,26 +162,59 @@ case "$CMD" in
     [ ! -f "$EVENTS" ] && exit 1
 
     CORE=$(jq -c '.' "$EVENTS" 2>/dev/null | jq -s '
-      . as $all |
-      [.[] | select(.p != null and .p != "")] |
-      group_by(.p | split("/") | if length > 1 then .[:-1] | join("/") else "." end) |
-      map({
-        dir: .[0].p | split("/") | (if length > 1 then .[:-1] | join("/") else "." end),
-        w: [.[] | select(.e | startswith("w"))] | length,
-        w_new: [.[] | select(.e == "w:new")] | length,
-        r: [.[] | select(.e == "r")] | length,
-        i: [.[] | select(.e == "i")] | length,
-        f: [.[] | select(.e == "f")] | length,
-        top_err: ([.[] | select(.e == "f") | .err // ""] | group_by(.) | sort_by(-length) | .[0][0] // "")
-      }) | sort_by(-.w) | .[0:15] |
-      . as $dirs |
+      . as $raw |
+      [ .[]
+        | select(.p != null and .p != "")
+        | . as $e
+        | ($e.p | split("/") | if length > 1 then .[:-1] | join("/") else "." end) as $dir
+        | select(($dir | startswith("/") | not))
+        | select($dir != "")
+        | select($dir != ".claude" and ($dir | startswith(".claude/") | not))
+        | select($dir != ".claude-plugin" and ($dir | startswith(".claude-plugin/") | not))
+        | select($dir != ".knowledge-graph" and ($dir | startswith(".knowledge-graph/") | not))
+        | select($dir != ".playwright" and ($dir | startswith(".playwright/") | not))
+        | .__dir = $dir
+      ] as $all |
+      ($all
+        | group_by(.__dir)
+        | map({
+            dir: .[0].__dir,
+            w: [.[] | select(.e | startswith("w"))] | length,
+            w_new: [.[] | select(.e == "w:new")] | length,
+            r: [.[] | select(.e == "r")] | length,
+            i: [.[] | select(.e == "i")] | length,
+            f: [.[] | select(.e == "f")] | length,
+            top_err: ([.[] | select(.e == "f") | .err // ""] | group_by(.) | sort_by(-length) | .[0][0] // "")
+          })
+        | sort_by(-.w)
+        | .[0:15]) as $dirs |
       {
         event_count: ($all | length),
         dirs: $dirs,
         blind_spots: [$dirs[] | select(.w > 2 and .r > 0 and .i == 0) | .dir],
-        loaded_knowledge: [$all[] | select(.e == "i") | .p] | unique
+        loaded_knowledge: [$all[] | select(.e == "i") | .p | select(startswith("/") | not) | select(. != ".claude/CLAUDE.md" and (startswith(".claude/") | not) and (startswith(".knowledge-graph/") | not))] | unique
       }
     ')
+
+    EVENT_COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ')
+    [ -z "$EVENT_COUNT" ] && EVENT_COUNT=0
+    CORE=$(echo "$CORE" | jq --argjson total "$EVENT_COUNT" '.event_count = $total')
+
+    BLIND_FILTERED=""
+    for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      BLIND_FILTERED="$BLIND_FILTERED\"$d\","
+    done
+    BLIND_JSON="[${BLIND_FILTERED%,}]"
+    [ -z "$BLIND_FILTERED" ] && BLIND_JSON="[]"
+    CORE=$(echo "$CORE" | jq --argjson b "$BLIND_JSON" '.blind_spots = $b')
+
+    HEATMAP_FILTERED=$(echo "$CORE" | jq '
+      .dirs |= map(select(.dir != "."))
+    ')
+    CORE="$HEATMAP_FILTERED"
 
     STALE_LIST=""
     for cmd_file in $(find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
@@ -216,9 +249,42 @@ case "$CMD" in
 
     # Filter blind_spots by filesystem — jq only knows about `i` events,
     # which miss dirs whose CLAUDE.md/SKILL.md exists but wasn't read this session.
-    # Also drop ghost paths from stale events where the directory no longer exists.
+    # Also drop ghost paths from stale events where the directory no longer exists,
+    # plus repo-external / infra noise that can leak in from host-project tracking.
     BLIND_FILTERED=""
     for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
+      case "$d" in
+        /*|.claude|.claude/*|.claude-plugin|.claude-plugin/*|.knowledge-graph|.knowledge-graph/*|.playwright|.playwright/*)
+          continue
+          ;;
+      esac
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      BLIND_FILTERED="$BLIND_FILTERED\"$d\","
+    done
+
+    DIRS_FILTERED=$(echo "$CORE" | jq '
+      .dirs |= map(select(
+        (.dir | startswith("/") | not) and
+        (.dir != ".claude") and (.dir | startswith(".claude/") | not) and
+        (.dir != ".claude-plugin") and (.dir | startswith(".claude-plugin/") | not) and
+        (.dir != ".knowledge-graph") and (.dir | startswith(".knowledge-graph/") | not) and
+        (.dir != ".playwright") and (.dir | startswith(".playwright/") | not)
+      ))
+    ')
+    CORE="$DIRS_FILTERED"
+    CORE=$(echo "$CORE" | jq '.event_count = ([.dirs[] | (.w + .r + .i + .f)] | add // 0)')
+    CORE=$(echo "$CORE" | jq '.loaded_knowledge |= map(select(startswith("/") | not))')
+    CORE=$(echo "$CORE" | jq '.loaded_knowledge |= map(select(. != ".claude/CLAUDE.md" and (. | startswith(".claude/") | not) and (. | startswith(".knowledge-graph/") | not)))')
+    CORE=$(echo "$CORE" | jq '.loaded_knowledge |= unique')
+    CORE=$(echo "$CORE" | jq '.blind_spots = ([.blind_spots[]? | select(startswith("/") | not) | select(. != ".claude-plugin" and (. | startswith(".claude-plugin/") | not))] | unique)')
+    for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
+      case "$d" in
+        /*|.claude|.claude/*|.claude-plugin|.claude-plugin/*|.knowledge-graph|.knowledge-graph/*|.playwright|.playwright/*)
+          continue
+          ;;
+      esac
       [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
       [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
       [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue

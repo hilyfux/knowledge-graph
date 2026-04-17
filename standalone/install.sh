@@ -25,6 +25,22 @@ INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_SRC="$INSTALL_DIR/skills/knowledge-graph"
 SKILL_DST="$TARGET/.claude/skills/knowledge-graph"
 SETTINGS="$TARGET/.claude/settings.json"
+KG_VERSION_FILE="$SKILL_SRC/VERSION"
+KG_VERSION="$(tr -d ' \t\r\n' < "$KG_VERSION_FILE" 2>/dev/null || true)"
+[ -n "$KG_VERSION" ] || KG_VERSION="v0.0.0-dev"
+KG_COMMIT="$(git -C "$INSTALL_DIR/.." rev-parse --short HEAD 2>/dev/null || echo unknown)"
+KG_INSTALLED_AT="$(date '+%Y-%m-%dT%H:%M:%S%z')"
+KG_VERSION_STATUS="$TARGET/.knowledge-graph/version.json"
+KG_VERSION_TEXT="$SKILL_DST/VERSION"
+KG_VERSION_LINE="$KG_VERSION+$KG_COMMIT"
+KG_STATUS_CMD='bash "$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/version.sh" status'
+KG_SYNC_CMD='bash "$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/version.sh" sync-installed'
+KG_PRINT_CMD='bash "$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/version.sh" print'
+KG_VERSION_JSON=$(jq -nc --arg version "$KG_VERSION" --arg commit "$KG_COMMIT" --arg installed_at "$KG_INSTALLED_AT" --arg source_repo "knowledge-graph" '{version:$version, commit:$commit, installed_at:$installed_at, source_repo:$source_repo}')
+KG_ROOT_CLAUDE="$TARGET/CLAUDE.md"
+KG_ROOT_VERSION_PREFIX="Installed Knowledge Graph: "
+KG_ROOT_VERSION_LINE="Installed Knowledge Graph: $KG_VERSION_LINE"
+KG_ROOT_VERSION_HINT="Use version+commit to compare source repo, installed copy, and host project state"
 
 # ── Migration: detect old installation ────────────────────────────────────────
 if [ -f "$TARGET/.claude/scripts/track-activity.sh" ]; then
@@ -53,7 +69,6 @@ LEGACY_FILES=(
 for f in "${LEGACY_FILES[@]}"; do
   [ -f "$f" ] && rm -f "$f" && info "已清理散落文件：$(basename "$f")"
 done
-# Migrate graph-events.jsonl from .claude/ root to data/ (if still there)
 if [ -f "$TARGET/.claude/graph-events.jsonl" ]; then
   mkdir -p "$SKILL_DST/data"
   mv "$TARGET/.claude/graph-events.jsonl" "$SKILL_DST/data/graph-events.jsonl"
@@ -66,12 +81,20 @@ fi
 
 # ── Create directories ─────────────────────────────────────────────────────────
 mkdir -p "$SKILL_DST/scripts" "$SKILL_DST/data"
+mkdir -p "$TARGET/.knowledge-graph"
 
 # ── Copy skill files ───────────────────────────────────────────────────────────
 info "复制 skill 到 .claude/skills/knowledge-graph/ ..."
 cp "$SKILL_SRC/SKILL.md" "$SKILL_DST/"
+cp "$SKILL_SRC/VERSION" "$SKILL_DST/"
 cp "$SKILL_SRC/scripts/"*.sh "$SKILL_DST/scripts/"
 chmod +x "$SKILL_DST/scripts/"*.sh
+printf 'version=%s\ncommit=%s\ninstalled_at=%s\nsource_repo=knowledge-graph\n' "$KG_VERSION" "$KG_COMMIT" "$KG_INSTALLED_AT" > "$KG_VERSION_TEXT"
+printf '%s\n' "$KG_VERSION_JSON" > "$KG_VERSION_STATUS"
+info "已写入版本元数据：$KG_VERSION_LINE"
+info "版本检查：! $KG_STATUS_CMD"
+info "版本同步：! $KG_SYNC_CMD"
+info "版本打印：! $KG_PRINT_CMD"
 
 # ── Merge hooks into settings.json ────────────────────────────────────────────
 HOOKS_JSON=$(cat << 'ENDJSON'
@@ -157,7 +180,6 @@ if [ ! -f "$SETTINGS" ]; then
   echo "{}" | jq --argjson h "$HOOKS_JSON" '. + {hooks: $h}' > "$SETTINGS"
 else
   EXISTING=$(cat "$SETTINGS")
-  # Detect old hooks (track-activity.sh path) and replace them
   if echo "$EXISTING" | jq -e '.hooks.PostToolUse[]? | select(.hooks[]?.command | contains("track-activity.sh"))' >/dev/null 2>&1; then
     warn "检测到旧版 hooks，替换为新路径..."
     echo "$EXISTING" | jq \
@@ -176,16 +198,8 @@ else
         .hooks.UserPromptSubmit   = ((.hooks.UserPromptSubmit // [])   | map(select(.hooks[]?.command | contains("prompt-trigger") | not)) + $h.UserPromptSubmit)
       ' > "$SETTINGS"
   elif echo "$EXISTING" | jq -e '.hooks.PostToolUse[]? | select(.hooks[]?.command | contains("knowledge-graph/scripts/track.sh"))' >/dev/null 2>&1; then
-    # Already installed — patch missing hooks
     PATCHED=false
     for HOOK_TYPE in PreToolUse PreCompact UserPromptSubmit PostCompact; do
-      HOOK_CMD=""
-      case "$HOOK_TYPE" in
-        PreToolUse)    HOOK_CMD="pre-write" ;;
-        PreCompact)    HOOK_CMD="precompact" ;;
-        UserPromptSubmit) HOOK_CMD="prompt-trigger" ;;
-        PostCompact)   HOOK_CMD="postcompact" ;;
-      esac
       if ! echo "$EXISTING" | jq -e ".hooks.${HOOK_TYPE}[]?" >/dev/null 2>&1; then
         info "补充 ${HOOK_TYPE} hook..."
         EXISTING=$(echo "$EXISTING" | jq --argjson h "$HOOKS_JSON" ".hooks.${HOOK_TYPE} = ((.hooks.${HOOK_TYPE} // []) + \$h.${HOOK_TYPE})")
@@ -218,7 +232,6 @@ fi
 
 # ── Init data directory ────────────────────────────────────────────────────────
 KG_DATA_DIR="$TARGET/.knowledge-graph"
-mkdir -p "$KG_DATA_DIR"
 touch "$KG_DATA_DIR/graph-events.jsonl"
 
 # Migrate data from old location (.claude/skills/knowledge-graph/data/)
@@ -236,7 +249,6 @@ INCLUDE_LINE="@.knowledge-graph/knowledge-index.md"
 OLD_INCLUDE="@.claude/skills/knowledge-graph/data/knowledge-index.md"
 DOT_CLAUDE_MD="$TARGET/.claude/CLAUDE.md"
 if [ -f "$DOT_CLAUDE_MD" ]; then
-  # 清理旧的 @include
   grep -qF "$OLD_INCLUDE" "$DOT_CLAUDE_MD" && \
     sed -i '' "s|$OLD_INCLUDE|$INCLUDE_LINE|g" "$DOT_CLAUDE_MD" 2>/dev/null
   if ! grep -qF "$INCLUDE_LINE" "$DOT_CLAUDE_MD"; then
@@ -247,6 +259,36 @@ if [ -f "$DOT_CLAUDE_MD" ]; then
 else
   echo "$INCLUDE_LINE" > "$DOT_CLAUDE_MD"
   info "已创建 .claude/CLAUDE.md 并添加知识索引 @include"
+fi
+
+if [ -f "$KG_ROOT_CLAUDE" ]; then
+  python3 - "$KG_ROOT_CLAUDE" "$KG_ROOT_VERSION_PREFIX" "$KG_ROOT_VERSION_LINE" "$KG_ROOT_VERSION_HINT" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+prefix = sys.argv[2]
+line = sys.argv[3]
+hint = sys.argv[4]
+text = path.read_text()
+lines = text.splitlines()
+out = []
+replaced = False
+for item in lines:
+    if item.startswith(prefix):
+        out.append(line)
+        replaced = True
+    else:
+        out.append(item)
+if not replaced:
+    if out and out[-1] != "":
+        out.append("")
+    out.append(line)
+    out.append("")
+    out.append(hint)
+path.write_text("\n".join(out) + "\n")
+PY
+else
+  printf '%s\n\n%s\n' "$KG_ROOT_VERSION_LINE" "$KG_ROOT_VERSION_HINT" > "$KG_ROOT_CLAUDE"
 fi
 
 # ── Register MCP server in .mcp.json ─────────────────────────────────────────
@@ -269,23 +311,23 @@ fi
 # ── Update .gitignore ──────────────────────────────────────────────────────────
 GITIGNORE="$TARGET/.gitignore"
 if [ -f "$GITIGNORE" ]; then
-  # 添加新路径
-  grep -q "^\.knowledge-graph/" "$GITIGNORE" || echo ".knowledge-graph/" >> "$GITIGNORE"
-  # 清理旧路径
-  grep -q "knowledge-graph/data" "$GITIGNORE" || true
+  grep -q '^\.knowledge-graph/' "$GITIGNORE" || echo '.knowledge-graph/' >> "$GITIGNORE"
   info "已更新 .gitignore"
 else
-  echo ".knowledge-graph/" > "$GITIGNORE"
+  echo '.knowledge-graph/' > "$GITIGNORE"
   info "已创建 .gitignore"
 fi
 
-# ── Done ───────────────────────────────────────────────────────────────────────
 echo ""
 info "✅ 安装完成！"
 echo ""
 echo "  已安装到: $TARGET/.claude/skills/knowledge-graph/"
+echo "  版本: $KG_VERSION_LINE"
+echo "  安装副本元数据: $KG_VERSION_TEXT"
+echo "  宿主状态元数据: $KG_VERSION_STATUS"
 echo ""
 echo "  下一步："
 echo "  1. 重启 Claude Code session（让 hooks 生效）"
 echo "  2. 运行 /knowledge-graph init 初始化知识图谱"
+echo "  3. 运行 ! $KG_STATUS_CMD 检查版本一致性"
 echo ""

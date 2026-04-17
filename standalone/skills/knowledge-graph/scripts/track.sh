@@ -168,8 +168,18 @@ case "$CMD" in
     ;;
 
   failure)
-    cat | jq -c --argjson t "$TS" '
-      {e:"f", tool:(.tool_name // ""), err:((.error // "")[0:100] | gsub("\n"; " ")), t:$t}
+    INPUT=$(cat)
+    FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
+    REL=""
+    if [ -n "$FILE_PATH" ] && is_project_file "$FILE_PATH"; then
+      REL="${FILE_PATH#$PREFIX}"
+    fi
+
+    # Ignore infra / host-leak failures without a project-local file path.
+    [ -z "$REL" ] && exit 0
+
+    echo "$INPUT" | jq -c --argjson t "$TS" --arg p "$REL" '
+      {e:"f", p:$p, tool:(.tool_name // ""), err:((.error // "")[0:100] | gsub("\n"; " ")), t:$t}
     ' >> "$EVENTS" 2>/dev/null
     ;;
 

@@ -60,7 +60,12 @@ case "$CMD" in
       for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
         | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10); do
         [ "$d" = "." ] && continue
-        [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING=$((MISSING + 1))
+        [ "${d#.knowledge-graph}" != "$d" ] && continue
+        [ "${d#.claude}" != "$d" ] && continue
+        [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+        [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+        [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+        MISSING=$((MISSING + 1))
       done
     fi
     if [ "$MISSING" -gt 0 ]; then
@@ -157,29 +162,62 @@ case "$CMD" in
     [ ! -f "$EVENTS" ] && exit 1
 
     CORE=$(jq -c '.' "$EVENTS" 2>/dev/null | jq -s '
-      . as $all |
-      [.[] | select(.p != null and .p != "")] |
-      group_by(.p | split("/") | if length > 1 then .[:-1] | join("/") else "." end) |
-      map({
-        dir: .[0].p | split("/") | (if length > 1 then .[:-1] | join("/") else "." end),
-        w: [.[] | select(.e | startswith("w"))] | length,
-        w_new: [.[] | select(.e == "w:new")] | length,
-        r: [.[] | select(.e == "r")] | length,
-        i: [.[] | select(.e == "i")] | length,
-        f: [.[] | select(.e == "f")] | length,
-        top_err: ([.[] | select(.e == "f") | .err // ""] | group_by(.) | sort_by(-length) | .[0][0] // "")
-      }) | sort_by(-.w) | .[0:15] |
-      . as $dirs |
+      . as $raw |
+      [ .[]
+        | select(.p != null and .p != "")
+        | . as $e
+        | ($e.p | split("/") | if length > 1 then .[:-1] | join("/") else "." end) as $dir
+        | select(($dir | startswith("/") | not))
+        | select($dir != "")
+        | select($dir != ".claude" and ($dir | startswith(".claude/") | not))
+        | select($dir != ".claude-plugin" and ($dir | startswith(".claude-plugin/") | not))
+        | select($dir != ".knowledge-graph" and ($dir | startswith(".knowledge-graph/") | not))
+        | select($dir != ".playwright" and ($dir | startswith(".playwright/") | not))
+        | .__dir = $dir
+      ] as $all |
+      ($all
+        | group_by(.__dir)
+        | map({
+            dir: .[0].__dir,
+            w: [.[] | select(.e | startswith("w"))] | length,
+            w_new: [.[] | select(.e == "w:new")] | length,
+            r: [.[] | select(.e == "r")] | length,
+            i: [.[] | select(.e == "i")] | length,
+            f: [.[] | select(.e == "f")] | length,
+            top_err: ([.[] | select(.e == "f") | .err // ""] | group_by(.) | sort_by(-length) | .[0][0] // "")
+          })
+        | sort_by(-.w)
+        | .[0:15]) as $dirs |
       {
         event_count: ($all | length),
         dirs: $dirs,
         blind_spots: [$dirs[] | select(.w > 2 and .r > 0 and .i == 0) | .dir],
-        loaded_knowledge: [$all[] | select(.e == "i") | .p] | unique
+        loaded_knowledge: [$all[] | select(.e == "i") | .p | select(startswith("/") | not) | select(. != ".claude/CLAUDE.md" and (startswith(".claude/") | not) and (startswith(".knowledge-graph/") | not))] | unique
       }
     ')
 
+    EVENT_COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ')
+    [ -z "$EVENT_COUNT" ] && EVENT_COUNT=0
+    CORE=$(echo "$CORE" | jq --argjson total "$EVENT_COUNT" '.event_count = $total')
+
+    BLIND_FILTERED=""
+    for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      BLIND_FILTERED="$BLIND_FILTERED\"$d\","
+    done
+    BLIND_JSON="[${BLIND_FILTERED%,}]"
+    [ -z "$BLIND_FILTERED" ] && BLIND_JSON="[]"
+    CORE=$(echo "$CORE" | jq --argjson b "$BLIND_JSON" '.blind_spots = $b')
+
+    HEATMAP_FILTERED=$(echo "$CORE" | jq '
+      .dirs |= map(select(.dir != "."))
+    ')
+    CORE="$HEATMAP_FILTERED"
+
     STALE_LIST=""
-    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
+    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
       -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
       REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
       DIR=$(dirname "$REL")
@@ -190,11 +228,17 @@ case "$CMD" in
     [ -z "$STALE_LIST" ] && STALE_JSON="[]"
 
     BROKEN_LIST=""
-    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
+    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
       -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
-      for ref in $(grep -oE '@[^[:space:]]+CLAUDE\.md' "$cmd_file" 2>/dev/null); do
-        FULL="$(dirname "$cmd_file")/${ref#@}"
-        if [ ! -f "$FULL" ]; then
+      for ref in $(grep -oE '@[^[:space:]]+(CLAUDE|SKILL)\.md' "$cmd_file" 2>/dev/null \
+        | grep -v '{'); do
+        # Skip template placeholders like `@{path}/CLAUDE.md` — those are docstring
+        # format examples, not real references.
+        REF_PATH="${ref#@}"
+        # Resolve both ways: relative to the node's directory, and from project root.
+        # Cross-module refs like `@src/foo/CLAUDE.md` use project-root form.
+        if [ ! -f "$(dirname "$cmd_file")/$REF_PATH" ] && \
+           [ ! -f "$CLAUDE_PROJECT_DIR/$REF_PATH" ]; then
           REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
           BROKEN_LIST="$BROKEN_LIST\"$REL: $ref\","
         fi
@@ -202,6 +246,53 @@ case "$CMD" in
     done
     BROKEN_JSON="[${BROKEN_LIST%,}]"
     [ -z "$BROKEN_LIST" ] && BROKEN_JSON="[]"
+
+    # Filter blind_spots by filesystem — jq only knows about `i` events,
+    # which miss dirs whose CLAUDE.md/SKILL.md exists but wasn't read this session.
+    # Also drop ghost paths from stale events where the directory no longer exists,
+    # plus repo-external / infra noise that can leak in from host-project tracking.
+    BLIND_FILTERED=""
+    for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
+      case "$d" in
+        /*|.claude|.claude/*|.claude-plugin|.claude-plugin/*|.knowledge-graph|.knowledge-graph/*|.playwright|.playwright/*)
+          continue
+          ;;
+      esac
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      BLIND_FILTERED="$BLIND_FILTERED\"$d\","
+    done
+
+    DIRS_FILTERED=$(echo "$CORE" | jq '
+      .dirs |= map(select(
+        (.dir | startswith("/") | not) and
+        (.dir != ".claude") and (.dir | startswith(".claude/") | not) and
+        (.dir != ".claude-plugin") and (.dir | startswith(".claude-plugin/") | not) and
+        (.dir != ".knowledge-graph") and (.dir | startswith(".knowledge-graph/") | not) and
+        (.dir != ".playwright") and (.dir | startswith(".playwright/") | not)
+      ))
+    ')
+    CORE="$DIRS_FILTERED"
+    CORE=$(echo "$CORE" | jq '.event_count = ([.dirs[] | (.w + .r + .i + .f)] | add // 0)')
+    CORE=$(echo "$CORE" | jq '.loaded_knowledge |= map(select(startswith("/") | not))')
+    CORE=$(echo "$CORE" | jq '.loaded_knowledge |= map(select(. != ".claude/CLAUDE.md" and (. | startswith(".claude/") | not) and (. | startswith(".knowledge-graph/") | not)))')
+    CORE=$(echo "$CORE" | jq '.loaded_knowledge |= unique')
+    CORE=$(echo "$CORE" | jq '.blind_spots = ([.blind_spots[]? | select(startswith("/") | not) | select(. != ".claude-plugin" and (. | startswith(".claude-plugin/") | not))] | unique)')
+    for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
+      case "$d" in
+        /*|.claude|.claude/*|.claude-plugin|.claude-plugin/*|.knowledge-graph|.knowledge-graph/*|.playwright|.playwright/*)
+          continue
+          ;;
+      esac
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
+      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      BLIND_FILTERED="$BLIND_FILTERED\"$d\","
+    done
+    BLIND_JSON="[${BLIND_FILTERED%,}]"
+    [ -z "$BLIND_FILTERED" ] && BLIND_JSON="[]"
+    CORE=$(echo "$CORE" | jq --argjson b "$BLIND_JSON" '.blind_spots = $b')
 
     COCHANGE_JSON="[]"
     FIXES=""
@@ -219,6 +310,140 @@ case "$CMD" in
       --arg fixes "${FIXES:-}" \
       '. + {stale: $stale, broken_refs: $broken, cochange_files: $cochange, recent_fixes: $fixes}' \
       > "$ANALYSIS"
+    ;;
+
+  save-channel-snapshot)
+    # Usage: analyze.sh save-channel-snapshot <channel>
+    # Writes .knowledge-graph/{channel}-snapshot.md from {channel}-events.jsonl.
+    # For the default (work) channel, use `analyze.sh stop` instead — this
+    # command is for named channels only (e.g. "upgrade").
+    CH=${2:-}
+    if [ -z "$CH" ] || [ "$CH" = "default" ] || [ "$CH" = "work" ]; then
+      echo "usage: analyze.sh save-channel-snapshot <channel> (non-default)" >&2
+      exit 1
+    fi
+
+    CH_EVENTS=$(channel_events_path "$CH")
+    CH_SNAP=$(channel_snapshot_path "$CH")
+
+    if [ ! -f "$CH_EVENTS" ] || [ ! -s "$CH_EVENTS" ]; then
+      echo "no events in channel '$CH' ($CH_EVENTS)"
+      exit 0
+    fi
+
+    TOTAL_LINES=$(wc -l < "$CH_EVENTS" | tr -d ' ')
+    VALID_LINES=$(filter_valid_events < "$CH_EVENTS" | wc -l | tr -d ' ')
+    BAD_LINES=$((TOTAL_LINES - VALID_LINES))
+
+    {
+      echo "# $CH 快照 ($(date '+%Y-%m-%d %H:%M'))"
+      echo ""
+      echo "## 事件统计"
+      echo "- 有效事件: $VALID_LINES"
+      [ "$BAD_LINES" -gt 0 ] && echo "- 忽略的损坏/旧 schema 行: $BAD_LINES"
+      echo ""
+      echo "## 活跃文件（最常编辑，前 8）"
+      filter_valid_events < "$CH_EVENTS" | \
+        jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null | \
+        sort | uniq -c | sort -rn | head -8 | awk '{printf "- %s (%d×)\n", $2, $1}'
+      echo ""
+      echo "## 最近 10 条事件"
+      filter_valid_events < "$CH_EVENTS" | tail -10 | \
+        jq -r '"- [\(.t | todateiso8601)] \(.e) \(.p)" + (if .err then "  — \(.err)" else "" end)' 2>/dev/null
+      echo ""
+      echo "## 错误事件（最近 5 条）"
+      FAILS=$(filter_valid_events < "$CH_EVENTS" | \
+        jq -r 'select(.e == "f") | "- [\(.t | todateiso8601)] \(.p): \(.err // "")"' 2>/dev/null | tail -5)
+      if [ -n "$FAILS" ]; then
+        echo "$FAILS"
+      else
+        echo "(无)"
+      fi
+    } > "$CH_SNAP"
+
+    echo "wrote $CH_SNAP ($VALID_LINES valid / $BAD_LINES ignored)"
+    ;;
+
+  validate-events)
+    # Usage: analyze.sh validate-events [channel]
+    # Reports schema conformance for a channel's events file.
+    CH=${2:-}
+    CH_EVENTS=$(channel_events_path "$CH")
+    if [ ! -f "$CH_EVENTS" ]; then
+      echo "no events file: $CH_EVENTS"
+      exit 0
+    fi
+    TOTAL=$(wc -l < "$CH_EVENTS" | tr -d ' ')
+    VALID=$(filter_valid_events < "$CH_EVENTS" | wc -l | tr -d ' ')
+    INVALID=$((TOTAL - VALID))
+    echo "channel: ${CH:-work}"
+    echo "file:    $CH_EVENTS"
+    echo "total:   $TOTAL"
+    echo "valid:   $VALID"
+    echo "invalid: $INVALID"
+    if [ "$INVALID" -gt 0 ]; then
+      echo ""
+      echo "first 3 invalid lines:"
+      awk -v script="$SCRIPT_DIR/guard.sh" 'NR<=200' "$CH_EVENTS" | \
+      while IFS= read -r line; do
+        if ! is_valid_event_line "$line"; then
+          printf '  %s\n' "$(printf '%.200s' "$line")"
+        fi
+      done | head -3
+    fi
+    ;;
+
+  build-index)
+    # Pure-bash knowledge-index.md generator. Replaces the LLM-driven
+    # regeneration in init step 6 / update step 5.4 — LLMs tend to
+    # shortcut to path echoes ("bin/: bin/") which gives Claude zero
+    # discovery signal. Bash extracts real topic keywords from each
+    # node's title and first prohibition, producing deterministic
+    # ≤15-char semantic tags every time.
+    INDEX_FILE="$KG_DATA/knowledge-index.md"
+    DATE=$(date +%Y-%m-%d)
+
+    mkdir -p "$KG_DATA"
+    TMP=$(mktemp -t kg-index.XXXXXX)
+    echo "# KG Index ($DATE)" > "$TMP"
+
+    COUNT=0
+    find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
+      -not -path "*/.git/*" -not -path "*/node_modules/*" \
+      -not -path "*/.knowledge-graph/*" 2>/dev/null | sort | \
+    while IFS= read -r f; do
+      REL="${f#$CLAUDE_PROJECT_DIR/}"
+      DIR=$(dirname "$REL")
+      BASE=$(basename "$DIR")
+      [ "$DIR" = "." ] && BASE="root"
+
+      # Prefer the portion after " — " in the title line (convention for kg nodes)
+      TITLE=$(head -1 "$f" 2>/dev/null | sed -E 's/^#[[:space:]]*//')
+      if printf '%s' "$TITLE" | grep -q '—'; then
+        KW=$(printf '%s' "$TITLE" | sed -E 's/.*—[[:space:]]*//' | \
+             awk '{for(i=1;i<=NF;i++){ w=tolower($i); gsub(/[^a-z0-9]/,"",w); if(length(w)>=3){print w; exit}}}')
+      else
+        # Fallback: first meaningful word of the first prohibition bullet
+        KW=$(awk 'NR>1 && /^## Prohibitions/{flag=1; next} flag && /^- /{
+          line=$0; sub(/^- */,"",line);
+          for(i=1;i<=split(line, a, / /);i++){w=tolower(a[i]); gsub(/[^a-z0-9]/,"",w); if(length(w)>=4){print w; exit}}
+          exit
+        }' "$f" 2>/dev/null)
+      fi
+      [ -z "$KW" ] && KW="node"
+
+      TAG="$BASE/$KW"
+      # Trim to 15 chars
+      TAG=$(printf '%s' "$TAG" | cut -c1-15)
+
+      echo "$REL: $TAG" >> "$TMP"
+      COUNT=$((COUNT + 1))
+    done
+
+    # File-line count: subtract header
+    ENTRIES=$(( $(wc -l < "$TMP") - 1 ))
+    mv "$TMP" "$INDEX_FILE"
+    echo "knowledge-index.md built: $ENTRIES entries"
     ;;
 
 esac
