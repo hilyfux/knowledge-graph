@@ -38,10 +38,9 @@ case "$CMD" in
   quick-status)
     # Lightweight status for SKILL.md !`command` pre-injection
     COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' 2>/dev/null || echo 0)
-    CLAUDE_MD_COUNT=$(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
-      -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l | tr -d ' ')
+    NODE_COUNT=$(find_knowledge_nodes | wc -l | tr -d ' ')
     LAST=$([ -f "$ANALYSIS" ] && date -r "$ANALYSIS" "+%m/%d %H:%M" 2>/dev/null || echo "never")
-    echo "Pending events: ${COUNT} | CLAUDE.md nodes: ${CLAUDE_MD_COUNT} | Last analysis: ${LAST}"
+    echo "Pending events: ${COUNT} | knowledge nodes: ${NODE_COUNT} | Last analysis: ${LAST}"
     ;;
 
   auto-detect)
@@ -54,7 +53,7 @@ case "$CMD" in
       exit 0
     fi
 
-    # Case 2: active modules missing CLAUDE.md → need update
+    # Case 2: active modules missing host knowledge node → need update
     MISSING=0
     if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
       for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
@@ -63,22 +62,20 @@ case "$CMD" in
         [ "${d#.knowledge-graph}" != "$d" ] && continue
         [ "${d#.claude}" != "$d" ] && continue
         [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
-        [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
-        [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+        has_knowledge_node "$d" && continue
         MISSING=$((MISSING + 1))
       done
     fi
     if [ "$MISSING" -gt 0 ]; then
       COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-      echo "[AUTO] $MISSING active modules lack CLAUDE.md ($COUNT events pending). Execute update mode now."
+      echo "[AUTO] $MISSING active modules lack knowledge nodes ($COUNT events pending). Execute update mode now."
       exit 0
     fi
 
     # Case 3: normal status
     COUNT=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' 2>/dev/null || echo 0)
-    CLAUDE_MD_COUNT=$(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
-      -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l | tr -d ' ')
-    echo "Pending events: ${COUNT} | CLAUDE.md nodes: ${CLAUDE_MD_COUNT} | Status: OK"
+    NODE_COUNT=$(find_knowledge_nodes | wc -l | tr -d ' ')
+    echo "Pending events: ${COUNT} | knowledge nodes: ${NODE_COUNT} | Status: OK"
     ;;
 
   scan)
@@ -93,7 +90,7 @@ case "$CMD" in
       -not -path '*/target/*' -not -path '*/.claude/*' \
       2>/dev/null | sed 's|^\./||' | xargs -I{} dirname {} | sort | uniq -c | sort -rn | awk '$1 >= 3 {print $2}' | head -30)
 
-    EXISTING=$(find . -name "CLAUDE.md" -not -path '*/.git/*' \
+    EXISTING=$(find . \( -name "CLAUDE.md" -o -name "SKILL.md" \) -not -path '*/.git/*' \
       -not -path '*/node_modules/*' 2>/dev/null | sed 's|^\./||' | sort)
 
     DEPS=""
@@ -149,7 +146,7 @@ case "$CMD" in
       '{
         project_type: $type, total_files: $files, total_dirs: $dirs,
         modules: ($modules | split("|") | map(select(. != ""))),
-        existing_claude_md: ($existing | split("|") | map(select(. != ""))),
+        existing_knowledge_nodes: ($existing | split("|") | map(select(. != ""))),
         dependencies: $deps, cochange_files: $cochange,
         recent_fixes: $fixes, conventions: $conventions
       }' > "$SCAN"
@@ -203,8 +200,7 @@ case "$CMD" in
     BLIND_FILTERED=""
     for d in $(echo "$CORE" | jq -r '.blind_spots[]?'); do
       [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      has_knowledge_node "$d" && continue
       BLIND_FILTERED="$BLIND_FILTERED\"$d\","
     done
     BLIND_JSON="[${BLIND_FILTERED%,}]"
@@ -217,8 +213,7 @@ case "$CMD" in
     CORE="$HEATMAP_FILTERED"
 
     STALE_LIST=""
-    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-      -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
+    for cmd_file in $(find_knowledge_nodes | head -20); do
       REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
       DIR=$(dirname "$REL")
       NEW_COUNT=$(echo "$CORE" | jq --arg d "$DIR" '[.dirs[] | select(.dir == $d) | .w_new] | add // 0')
@@ -228,8 +223,7 @@ case "$CMD" in
     [ -z "$STALE_LIST" ] && STALE_JSON="[]"
 
     BROKEN_LIST=""
-    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-      -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
+    for cmd_file in $(find_knowledge_nodes | head -20); do
       for ref in $(grep -oE '@[^[:space:]]+(CLAUDE|SKILL)\.md' "$cmd_file" 2>/dev/null \
         | grep -v '{'); do
         # Skip template placeholders like `@{path}/CLAUDE.md` — those are docstring
@@ -259,8 +253,7 @@ case "$CMD" in
           ;;
       esac
       [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      has_knowledge_node "$d" && continue
       BLIND_FILTERED="$BLIND_FILTERED\"$d\","
     done
 
@@ -286,8 +279,7 @@ case "$CMD" in
           ;;
       esac
       [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      has_knowledge_node "$d" && continue
       BLIND_FILTERED="$BLIND_FILTERED\"$d\","
     done
     BLIND_JSON="[${BLIND_FILTERED%,}]"
@@ -408,9 +400,7 @@ case "$CMD" in
     echo "# KG Index ($DATE)" > "$TMP"
 
     COUNT=0
-    find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-      -not -path "*/.git/*" -not -path "*/node_modules/*" \
-      -not -path "*/.knowledge-graph/*" 2>/dev/null | sort | \
+    find_knowledge_nodes | sort | \
     while IFS= read -r f; do
       REL="${f#$CLAUDE_PROJECT_DIR/}"
       DIR=$(dirname "$REL")

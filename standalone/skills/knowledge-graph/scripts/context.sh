@@ -22,7 +22,7 @@ case "$CMD" in
     > "$PRED_CACHE" 2>/dev/null
     rm -f "$KG_DATA/.trigger-checked" "$KG_DATA/.update-triggered" 2>/dev/null
 
-    # Knowledge index loaded via @include in .claude/CLAUDE.md (always resident)
+    # Knowledge index loaded via @include in .claude/CLAUDE.md for Claude Code.
 
     # Auto-trigger: if not initialized or active modules missing CLAUDE.md
     if [ ! -f "$KG_DATA/.initialized" ]; then
@@ -37,7 +37,7 @@ case "$CMD" in
       [ -n "$SNAP_CONTENT" ] && CONTEXT="$CONTEXT\n$SNAP_CONTENT"
     fi
 
-    # Auto-update: trigger when active modules lack CLAUDE.md/SKILL.md.
+    # Auto-update: trigger when active modules lack a knowledge node.
     # Append the notice to CONTEXT — do NOT early-exit, otherwise the
     # work snapshot loaded above is thrown away and the main session
     # starts blind. Also exclude runtime/infra dirs (false positives).
@@ -53,14 +53,13 @@ case "$CMD" in
           [ "${d#.knowledge-graph}" != "$d" ] && continue
           [ "${d#.claude}" != "$d" ] && continue
           [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
-          [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
-          [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+          has_knowledge_node "$d" && continue
           MISSING_NODES=$((MISSING_NODES + 1))
         done
       fi
 
       if [ "$MISSING_NODES" -gt 0 ]; then
-        CONTEXT="$CONTEXT\n[kg auto-trigger] $MISSING_NODES active modules lack CLAUDE.md. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update."
+        CONTEXT="$CONTEXT\n[kg auto-trigger] $MISSING_NODES active modules lack knowledge nodes. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update."
       fi
     fi
 

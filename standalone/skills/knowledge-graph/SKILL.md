@@ -2,7 +2,7 @@
 name: knowledge-graph
 description: >
   Use when user says "update/refresh knowledge graph", "graph status", "blind spots",
-  "CLAUDE.md coverage", or "init knowledge graph". Also use when receiving a
+  "knowledge node coverage", "CLAUDE.md coverage", or "init knowledge graph". Also use when receiving a
   "[kg auto-trigger]" message injected by hooks. Do not use for regular coding tasks.
 argument-hint: [init|update|status|query <question>]
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep, Agent
@@ -16,8 +16,15 @@ You are the knowledge graph engine. You maintain the project's distributed knowl
 network — tracking which modules exist, how they relate, and where blind spots need
 documentation. Your output directly affects Claude's future judgment quality in this
 project. Accuracy over completeness: never write a rule without evidence.
-Only modify knowledge files under .claude/ and module CLAUDE.md — never modify source code.
+Only modify canonical knowledge files: module `CLAUDE.md`, `.claude/` glue files, and existing `SKILL.md` nodes — never modify source code. `AGENTS.md` is a Codex adapter and must not duplicate module knowledge.
 </role>
+
+<host-adapter>
+Canonical knowledge node filename:
+- Module knowledge lives in `CLAUDE.md` so Claude Code keeps native lazy loading.
+- Existing `SKILL.md` files also count as coverage for skill modules.
+- `AGENTS.md` is only a Codex adapter that points Codex to MCP/canonical `CLAUDE.md`; do not treat module `AGENTS.md` as graph coverage.
+</host-adapter>
 
 <guards>
 Before any operation, verify:
@@ -49,9 +56,9 @@ Read all of these in parallel (do not serialize):
 4. Glob `.claude/rules/*.md`
 
 Compute:
-- **Coverage** = dirs with CLAUDE.md / total module dirs (dirs with ≥3 files)
-- **Empty nodes** = CLAUDE.md exists but `## Prohibitions` has no list items
-- **Blind spots** = graph-analysis.json `blind_spots`; or dirs with writes > 2 and no CLAUDE.md
+- **Coverage** = dirs with a knowledge node / total module dirs (dirs with ≥3 files)
+- **Empty nodes** = knowledge node exists but `## Prohibitions` has no list items
+- **Blind spots** = graph-analysis.json `blind_spots`; or dirs with writes > 2 and no knowledge node
 - **Stale** = graph-analysis.json `stale`; show N/A if no cache
 - **Broken refs** = graph-analysis.json `broken_refs`; show N/A if no cache
 
@@ -92,7 +99,7 @@ If script fails, manually count files and skip graph-scan.json in step 3.
 <step id="2" name="confirm">
 Read `.knowledge-graph/graph-scan.json` and output:
 "Project: {root}, type: {project_type}, {total_files} files, {total_dirs} modules.
-{existing} CLAUDE.md exist. Will create/supplement {diff}. Continue? (y/n)"
+{existing} knowledge nodes exist. Will create/supplement {diff}. Continue? (y/n)"
 
 Wait for confirmation. If rejected, stop.
 </step>
@@ -100,9 +107,9 @@ Wait for confirmation. If rejected, stop.
 <step id="3" name="generate">
 Read graph-scan.json fields: modules, dependencies, cochange_files, recent_fixes, conventions.
 
-For each module (skip if CLAUDE.md already complete, append if missing sections):
+For each module (skip if a knowledge node already complete, append if missing sections):
 - Read up to 3 key files (index/main/README) in parallel to understand the module.
-- Generate CLAUDE.md in this exact format (≤20 lines, maximum density):
+- Generate canonical `CLAUDE.md` in this exact format (≤20 lines, maximum density):
 
 ```markdown
 # {module_name}
@@ -162,7 +169,7 @@ Create the file if missing; append the directive if not present.
 </step>
 
 <step id="7" name="report">
-Output: "Init complete: {X} modules / {Y} new CLAUDE.md / {Z} appended sections / {W} rules / {N} skipped (already complete)"
+Output: "Init complete: {X} modules / {Y} new knowledge nodes / {Z} appended sections / {W} rules / {N} skipped (already complete)"
 </step>
 
 </mode>
@@ -183,18 +190,18 @@ In parallel:
 1. Glob all directories (exclude .git, node_modules, dist, build, .claude)
 2. Glob `**/CLAUDE.md` (existing nodes)
 
-Find directories with ≥3 files but no CLAUDE.md → new module list.
+Find directories with ≥3 files but no knowledge node → new module list.
 If empty, output "No new modules." and skip steps 2-3.
 </step>
 
 <step id="2" name="confirm-new">
-Output: "Found {N} new modules:\n{list}\nGenerate CLAUDE.md for them? (y/n)"
+Output: "Found {N} new modules:\n{list}\nGenerate knowledge nodes for them? (y/n)"
 If rejected, skip step 3.
 </step>
 
 <step id="3" name="generate-new">
 For each new module, read up to 3 key files in parallel.
-Generate CLAUDE.md (≤20 lines, same format and quality gate as init step 3).
+Generate canonical `CLAUDE.md` (≤20 lines, same format and quality gate as init step 3).
 </step>
 
 <step id="4" name="event-update">
@@ -213,16 +220,16 @@ Select mode by event_count:
 - **Standard** (≥ 15): P1 → P2 → P3 → P4, max 5 files
 
 **P1 — Feedback loop (standard only)**
-Read each loaded CLAUDE.md's `## Prohibitions`. Compare against failure events for that directory.
+Read each loaded knowledge node's `## Prohibitions`. Compare against failure events for that directory.
 If prohibited behavior is still occurring → Edit to make the rule more specific and actionable.
 
 **P2 — Repair**
 - broken_refs: @ref targets that don't exist → delete those lines
-- stale list: CLAUDE.md in stale dirs → re-read key files, refresh with Edit
+- stale list: knowledge nodes in stale dirs → re-read key files, refresh with Edit
 
 **P3 — Blind spots**
-For dirs in blind_spots (high writes, no CLAUDE.md, not handled in steps 1-3):
-Use Grep to analyze imports/requires for real dependencies. Generate CLAUDE.md (same quality standard).
+For dirs in blind_spots (high writes, no knowledge node, not handled in steps 1-3):
+Use Grep to analyze imports/requires for real dependencies. Generate canonical `CLAUDE.md` (same quality standard).
 
 **P4 — Cross-module rules (standard only)**
 Multiple dirs with same top_err → `.claude/rules/{name}.md` with `paths:` frontmatter. Idempotent.
@@ -231,7 +238,7 @@ Multiple dirs with same top_err → `.claude/rules/{name}.md` with `paths:` fron
 Find files edited (w:edit) ≥ 3 times in graph-events.
 Ask user (max 1 question per update, skip in non-interactive mode):
 "You edited {file} {N} times. Any pitfalls or lessons worth recording? (reply to record, empty to skip)"
-Append answer to that directory's CLAUDE.md `## Prohibitions` section.
+Append answer to that directory's knowledge node `## Prohibitions` section.
 
 **P6-P8 — Inference (standard only, parallel agents)**
 When event_count ≥ 15, dispatch two agents in parallel via Agent tool:
@@ -270,12 +277,12 @@ When event_count < 15, skip P6-P8.
 
 <step id="1" name="locate">
 Read `.knowledge-graph/knowledge-index.md`.
-If missing, Glob `**/CLAUDE.md` (exclude .git, node_modules) as fallback.
+If missing, Glob `**/{CLAUDE.md,SKILL.md}` (exclude .git, node_modules) as fallback.
 Filter relevant modules by question keywords (max 5).
 </step>
 
 <step id="2" name="retrieve">
-Read matched CLAUDE.md files in parallel.
+Read matched knowledge node files in parallel.
 Also read `.claude/rules/*.md` that relate to the question.
 </step>
 
@@ -283,7 +290,7 @@ Also read `.claude/rules/*.md` that relate to the question.
 Synthesize an answer from retrieved knowledge nodes.
 Format:
 - Direct answer
-- Sources: `→ from {path}/CLAUDE.md`
+- Sources: `→ from {path}/{node file}`
 - If knowledge is insufficient, state which modules lack documentation (blind spots)
 </step>
 

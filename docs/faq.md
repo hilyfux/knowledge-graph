@@ -44,7 +44,7 @@ The current packaging and workflow are optimized for Claude Code, though the und
 
 ## How does the query mode work?
 
-Run `/knowledge-graph query <your question>` to search the knowledge graph. It reads the `knowledge-index.md` to locate relevant modules, then reads their `CLAUDE.md` files and synthesizes an answer with sources. Useful for questions like "which module handles authentication?" or "what are the known pitfalls in the API layer?".
+Run `/knowledge-graph query <your question>` to search the knowledge graph. It reads the `knowledge-index.md` to locate relevant modules, then reads their canonical knowledge nodes (`CLAUDE.md` or `SKILL.md`) and synthesizes an answer with sources. Useful for questions like "which module handles authentication?" or "what are the known pitfalls in the API layer?".
 
 ## What triggers an automatic update?
 
@@ -62,7 +62,7 @@ A pure bash + jq pattern mining system (`infer.sh`) that discovers implicit know
 
 ## Does it survive `clear` and `compact`?
 
-Yes. The knowledge index uses `@include` in `.claude/CLAUDE.md`, which is part of the system prompt and automatically rebuilt after clear/compact. Module CLAUDE.md files are lazily re-loaded when Claude accesses files in those directories. A PreCompact hook guides the compactor to preserve prohibitions and error patterns.
+Yes. In Claude Code, the knowledge index uses `@include` in `.claude/CLAUDE.md`, which is part of the system prompt and automatically rebuilt after clear/compact. Module `CLAUDE.md` files are lazily re-loaded when Claude accesses files in those directories. In Codex, root `AGENTS.md` points the agent to the MCP server, which exposes the same canonical `CLAUDE.md` nodes. A PreCompact hook guides Claude's compactor to preserve prohibitions and error patterns.
 
 ## What is predictive context loading?
 

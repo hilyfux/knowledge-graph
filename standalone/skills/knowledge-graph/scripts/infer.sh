@@ -74,7 +74,7 @@ case "$CMD" in
     ;;
 
   decay)
-    # 知识衰减检测：CLAUDE.md 中的规则是否仍然有效？
+    # 知识衰减检测：知识节点中的规则是否仍然有效？
     # 单次 jq 预计算所有目录统计，消除 N+1 查询
     NOW=$(date +%s)
 
@@ -91,10 +91,9 @@ case "$CMD" in
       })
     ' 2>/dev/null || echo "[]")
 
-    # Step 2: for each CLAUDE.md, look up pre-computed stats and assign status
+    # Step 2: for each knowledge node, look up pre-computed stats and assign status
     RESULTS="[]"
-    for cmd_file in $(find "$CLAUDE_PROJECT_DIR" -name "CLAUDE.md" \
-      -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | head -20); do
+    for cmd_file in $(find_knowledge_nodes | head -20); do
       REL="${cmd_file#$CLAUDE_PROJECT_DIR/}"
       DIR=$(dirname "$REL")
       [ "$DIR" = "." ] && continue

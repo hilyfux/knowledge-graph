@@ -63,7 +63,7 @@ case "$CMD" in
     ;;
 
   pre-write)
-    # PreToolUse: Write|Edit — block if module needs CLAUDE.md
+    # PreToolUse: Write|Edit — block if module needs a knowledge node
     # Must be PreToolUse (not PostToolUse) for decision:block to work
     INPUT=$(cat)
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // ""' 2>/dev/null)
@@ -73,9 +73,9 @@ case "$CMD" in
     TARGET_DIR=$(dirname "${FILE_PATH#$PREFIX}")
     UPDATE_MARKER="$KG_DATA/.update-triggered"
 
-    # One-time per session: block if writing to module without CLAUDE.md
+    # One-time per session: block if writing to module without a knowledge node
     if [ ! -f "$UPDATE_MARKER" ] && [ -f "$KG_DATA/.initialized" ]; then
-      if [ "$TARGET_DIR" != "." ] && [ ! -f "$CLAUDE_PROJECT_DIR/$TARGET_DIR/CLAUDE.md" ]; then
+      if [ "$TARGET_DIR" != "." ] && ! has_knowledge_node "$TARGET_DIR"; then
         touch "$UPDATE_MARKER" 2>/dev/null
 
         # Assess module complexity from event history
@@ -87,7 +87,7 @@ case "$CMD" in
 
         if [ "$DIR_WRITES" -ge 5 ] || [ "$DIR_FAILS" -ge 1 ]; then
           # Complex module: has significant history or failures → use skill for deep analysis
-          printf '{"decision":"block","reason":"Write paused. Module %s/ has significant activity (%s writes, %s failures) but no CLAUDE.md. Call Skill(skill=\\\"knowledge-graph\\\", args=\\\"update\\\") for code+history analysis. Then retry."}\n' "$TARGET_DIR" "$DIR_WRITES" "$DIR_FAILS"
+          printf '{"decision":"block","reason":"Write paused. Module %s/ has significant activity (%s writes, %s failures) but no knowledge node. Call Skill(skill=\\\"knowledge-graph\\\", args=\\\"update\\\") for code+history analysis. Then retry."}\n' "$TARGET_DIR" "$DIR_WRITES" "$DIR_FAILS"
         else
           # Simple module: new/minimal history → direct write with format template
           printf '{"decision":"block","reason":"Write paused. Module %s/ needs CLAUDE.md (max 20 lines). Create it now:\\n# %s\\n## Prohibitions\\n- {behavior} → {consequence}\\n## When Changing\\n- {condition} → @{path}/CLAUDE.md\\n## Conventions\\n- {rule}\\nEvidence-only, no guesses. Also add one-line entry to .knowledge-graph/knowledge-index.md. Then retry."}\n' "$TARGET_DIR" "$(basename "$TARGET_DIR")"
@@ -152,7 +152,8 @@ case "$CMD" in
     if [ -n "$PRED_DIRS" ]; then
       while IFS= read -r pdir; do
         [ -z "$pdir" ] && continue
-        RULES=$(get_prohibitions "$CLAUDE_PROJECT_DIR/$pdir/CLAUDE.md" 3)
+        NODE=$(knowledge_node_path "$pdir" 2>/dev/null || true)
+        RULES=$(get_prohibitions "$NODE" 3)
         [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}\n"
       done <<< "$PRED_DIRS"
     fi
@@ -184,7 +185,7 @@ case "$CMD" in
     ;;
 
   instructions)
-    # Only record module-level CLAUDE.md loads (skip root, .claude/, .knowledge-graph/)
+    # Only record module-level knowledge node loads (skip root, .claude/, .knowledge-graph/)
     cat | jq -c --argjson t "$TS" --arg prefix "$PREFIX" '
       [(.loaded_files // [])[], (.file_path // empty)] | unique | .[] |
       select(. != null and . != "") |

@@ -1,7 +1,7 @@
 #!/bin/bash
 # prompt-trigger.sh — UserPromptSubmit hook
 # Two triggers:
-# 1. First user message in session: if active modules lack CLAUDE.md → auto-trigger update
+# 1. First user message in session: if active modules lack knowledge nodes → auto-trigger update
 # 2. User explicitly mentions knowledge graph → inject status
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/guard.sh"
@@ -15,7 +15,7 @@ echo "$PROMPT" | grep -qE '<task-notification>|<system-reminder>|<command-name>'
 
 EVENTS="$KG_DATA/graph-events.jsonl"
 
-# Trigger 1: auto-update on first user message if modules need CLAUDE.md
+# Trigger 1: auto-update on first user message if modules need knowledge nodes
 # Use a session-scoped marker to fire only once per session
 TRIGGER_MARKER="$KG_DATA/.trigger-checked"
 if [ ! -f "$TRIGGER_MARKER" ] && [ -f "$KG_DATA/.initialized" ] && [ -f "$EVENTS" ]; then
@@ -29,8 +29,7 @@ if [ ! -f "$TRIGGER_MARKER" ] && [ -f "$KG_DATA/.initialized" ] && [ -f "$EVENTS
       [ "${d#.knowledge-graph}" != "$d" ] && continue
       [ "${d#.claude}" != "$d" ] && continue
       [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && continue
-      [ -f "$CLAUDE_PROJECT_DIR/$d/SKILL.md" ] && continue
+      has_knowledge_node "$d" && continue
       MISSING=$((MISSING + 1))
     done
     if [ "$MISSING" -gt 0 ]; then

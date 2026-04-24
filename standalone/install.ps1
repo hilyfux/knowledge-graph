@@ -244,10 +244,41 @@ if (Test-Path $dotClaudeMd) {
     Info 'Created .claude/CLAUDE.md with knowledge-index @include'
 }
 
+# ── Add Codex operating notes to AGENTS.md ──────────────────────────────────
+$agentsPath = Join-Path $TargetPath 'AGENTS.md'
+$agentsBegin = '<!-- knowledge-graph:codex begin -->'
+$agentsEnd = '<!-- knowledge-graph:codex end -->'
+$agentsBlock = @"
+$agentsBegin
+## Knowledge Graph
+
+- Use the bundled MCP server in .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- Durable module knowledge lives in canonical CLAUDE.md and SKILL.md files. AGENTS.md is only the Codex adapter that tells Codex to read those canonical nodes through MCP.
+- Runtime data lives under .knowledge-graph/ and should stay uncommitted.
+- If running scripts outside Claude Code, set KG_PROJECT_DIR to this project root; Claude Code may set CLAUDE_PROJECT_DIR instead.
+- Before reporting success, include concrete evidence: tests run, files checked, or MCP resources consulted.
+$agentsEnd
+"@
+
+if (Test-Path $agentsPath) {
+    $agentsText = Get-Content -Raw $agentsPath
+    $pattern = [regex]::Escape($agentsBegin) + '[\s\S]*?' + [regex]::Escape($agentsEnd)
+    if ($agentsText -match [regex]::Escape($agentsBegin)) {
+        $agentsText = [regex]::Replace($agentsText, $pattern, $agentsBlock)
+    } else {
+        $agentsText = $agentsText.TrimEnd() + "`n`n" + $agentsBlock + "`n"
+    }
+    Set-Content -Path $agentsPath -Value $agentsText -Encoding UTF8
+} else {
+    Set-Content -Path $agentsPath -Value "# Project Instructions`n`n$agentsBlock`n" -Encoding UTF8
+}
+Info 'Updated AGENTS.md with Codex Knowledge Graph notes'
+
 # ── Register MCP server in .mcp.json ─────────────────────────────────────────
 $mcpJson       = Join-Path $TargetPath '.mcp.json'
 # Use forward slashes in the args path so the JSON stays sane across shells
 $mcpServerPath = ($SkillDst -replace '\\', '/') + '/scripts/mcp-server.sh'
+$mcpEnv = [PSCustomObject]@{ KG_PROJECT_DIR = $TargetPath }
 
 if (Test-Path $mcpJson) {
     $existing = Get-Content -Raw $mcpJson | ConvertFrom-Json
@@ -259,10 +290,19 @@ if (Test-Path $mcpJson) {
             type    = 'stdio'
             command = 'bash'
             args    = @($mcpServerPath)
+            env     = $mcpEnv
         }
         $existing.mcpServers | Add-Member -NotePropertyName 'knowledge-graph' -NotePropertyValue $kgMcp -Force
         $existing | ConvertTo-Json -Depth 10 | Set-Content -Path $mcpJson -Encoding UTF8
         Info 'Registered knowledge-graph MCP server in .mcp.json'
+    } else {
+        if ($existing.mcpServers.'knowledge-graph'.PSObject.Properties['env']) {
+            $existing.mcpServers.'knowledge-graph'.env = $mcpEnv
+        } else {
+            $existing.mcpServers.'knowledge-graph' | Add-Member -NotePropertyName 'env' -NotePropertyValue $mcpEnv -Force
+        }
+        $existing | ConvertTo-Json -Depth 10 | Set-Content -Path $mcpJson -Encoding UTF8
+        Info 'Updated KG_PROJECT_DIR for knowledge-graph MCP server'
     }
 } else {
     $obj = [PSCustomObject]@{
@@ -271,6 +311,7 @@ if (Test-Path $mcpJson) {
                 type    = 'stdio'
                 command = 'bash'
                 args    = @($mcpServerPath)
+                env     = $mcpEnv
             }
         }
     }
@@ -299,5 +340,6 @@ Write-Host "  Installed to: $SkillDst"
 Write-Host ''
 Write-Host '  Next steps:'
 Write-Host '  1. Restart Claude Code (so hooks activate)'
-Write-Host '  2. Run /knowledge-graph init to bootstrap'
+Write-Host '  2. In Codex/MCP clients, read AGENTS.md and connect the knowledge-graph server from .mcp.json'
+Write-Host '  3. Run /knowledge-graph init to bootstrap'
 Write-Host ''

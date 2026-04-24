@@ -1,8 +1,29 @@
 #!/bin/bash
 # guard.sh — shared env guard + helpers for all kg hook scripts
+resolve_project_dir() {
+  local project="${CLAUDE_PROJECT_DIR:-${KG_PROJECT_DIR:-}}"
+  if [ -z "$project" ]; then
+    local d
+    d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    while [ "$d" != "/" ]; do
+      if [ -d "$d/.knowledge-graph" ]; then
+        project="$d"
+        break
+      fi
+      d="$(dirname "$d")"
+    done
+  fi
+  if [ -z "$project" ] && [ -d "$(pwd)/.knowledge-graph" ]; then
+    project="$(pwd)"
+  fi
+  printf '%s' "$project"
+}
+
+CLAUDE_PROJECT_DIR="$(resolve_project_dir)"
 [ -z "$CLAUDE_PROJECT_DIR" ] && exit 0
 [ "$CLAUDE_PROJECT_DIR" = "$HOME" ] && exit 0
 [ "$CLAUDE_PROJECT_DIR" = "/" ] && exit 0
+export CLAUDE_PROJECT_DIR
 
 KG_DATA="$CLAUDE_PROJECT_DIR/.knowledge-graph"
 [ -d "$KG_DATA" ] || mkdir -p "$KG_DATA"
@@ -106,7 +127,26 @@ tlb_invalidate() {
   mv "$PRED_CACHE.tmp" "$PRED_CACHE" 2>/dev/null
 }
 
-# ── Shared: extract prohibitions from a module CLAUDE.md ──────────────────────
+# ── Shared: knowledge node helpers ───────────────────────────────────────────
+knowledge_node_path() {
+  local dir="$1" base
+  [ "$dir" = "." ] && base="$CLAUDE_PROJECT_DIR" || base="$CLAUDE_PROJECT_DIR/$dir"
+  [ -f "$base/CLAUDE.md" ] && { printf '%s\n' "$base/CLAUDE.md"; return 0; }
+  [ -f "$base/SKILL.md" ] && { printf '%s\n' "$base/SKILL.md"; return 0; }
+  return 1
+}
+
+has_knowledge_node() {
+  knowledge_node_path "$1" >/dev/null 2>&1
+}
+
+find_knowledge_nodes() {
+  find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
+    -not -path "*/.git/*" -not -path "*/node_modules/*" \
+    -not -path "*/.knowledge-graph/*" 2>/dev/null
+}
+
+# ── Shared: extract prohibitions from a knowledge node ───────────────────────
 get_prohibitions() {
   local cmd_file="$1" max="${2:-3}"
   [ ! -f "$cmd_file" ] && return

@@ -15,7 +15,7 @@ Claude Code wastes tokens in 3 ways. Knowledge Graph fixes all of them:
 | Re-reading files to rediscover patterns | Injects known patterns via `@include` on session start | **~30-50% fewer reads** |
 | Generic context after /clear or compact | Rebuilds precise working state from snapshot | **No re-exploration needed** |
 | LLM-powered inference | Pure bash + jq prediction engine, zero LLM calls | **100% inference cost eliminated** |
-| Bloated context injection | CLAUDE.md nodes capped at 20 lines, single-line index format | **~40% fewer context tokens** |
+| Bloated context injection | Knowledge nodes capped at 20 lines, single-line index format | **~40% fewer context tokens** |
 
 ### 2. /clear without consequences
 
@@ -63,7 +63,7 @@ The longer you use it, the smarter it gets:
 | | Knowledge Graph | mcp-knowledge-graph | Memento |
 |---|---|---|---|
 | Dependencies | `jq` only | Neo4j + Node.js | Python + Vector DB |
-| Storage | Git (CLAUDE.md files) | Neo4j database | External DB |
+| Storage | Git (`CLAUDE.md` files) | Neo4j database | External DB |
 | Privacy | 100% local | Configurable | Configurable |
 | Team sharing | `git push` | Manual export | Manual export |
 | Token cost for inference | Zero | API calls | Embedding calls |
@@ -76,7 +76,7 @@ Your coding ──→ Hooks silently record events (3ms each)
                          ↓
               Bash inference engine analyzes patterns (zero LLM)
                          ↓
-              CLAUDE.md nodes written per directory (git-committed)
+              Host-native knowledge nodes written per directory (git-committed)
                          ↓
 Session start ──→ @include injects index + snapshot into system prompt
                          ↓
@@ -167,4 +167,3 @@ Team (5 devs)       ~450M tokens/mo     ~120M tokens/mo   73%
                                                           ↑ compounds
                                                           as KG matures
 ```
-

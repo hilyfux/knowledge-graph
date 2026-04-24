@@ -11,10 +11,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION="1.2.2"
 
 # ── Project-dir resolution ────────────────────────────────────────────────────
-# Priority: CLAUDE_PROJECT_DIR env > walk up from script dir > $PWD (warn).
-# Codex / non-Claude agents may not set CLAUDE_PROJECT_DIR, so the fallback
-# has to be reliable.
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
+# Priority: CLAUDE_PROJECT_DIR env > KG_PROJECT_DIR env > walk up from script
+# dir > $PWD (warn). Codex / non-Claude agents may not set
+# CLAUDE_PROJECT_DIR, so the fallback has to be reliable.
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${KG_PROJECT_DIR:-}}"
 if [ -z "$PROJECT_DIR" ]; then
   d="$SCRIPT_DIR"
   while [ "$d" != "/" ]; do
@@ -24,15 +24,34 @@ if [ -z "$PROJECT_DIR" ]; then
 fi
 if [ -z "$PROJECT_DIR" ]; then
   PROJECT_DIR="$(pwd)"
-  echo "[mcp-server] warning: CLAUDE_PROJECT_DIR unset and no .knowledge-graph/ found up-tree; falling back to PWD=$PROJECT_DIR" >&2
+  echo "[mcp-server] warning: no project env and no .knowledge-graph/ found up-tree; falling back to PWD=$PROJECT_DIR" >&2
 fi
 export CLAUDE_PROJECT_DIR="$PROJECT_DIR"
+export KG_PROJECT_DIR="$PROJECT_DIR"
 
 KG_DATA="$PROJECT_DIR/.knowledge-graph"
 EVENTS="$KG_DATA/graph-events.jsonl"
 ANALYSIS="$KG_DATA/graph-analysis.json"
 INDEX="$KG_DATA/knowledge-index.md"
 SNAPSHOT="$KG_DATA/work-snapshot.md"
+
+knowledge_node_path() {
+  local module_path="$1" base
+  if [ "$module_path" = "." ] || [ "$module_path" = "" ] || [ "$module_path" = "root" ]; then
+    base="$PROJECT_DIR"
+  else
+    base="$PROJECT_DIR/$module_path"
+  fi
+  [ -f "$base/CLAUDE.md" ] && { printf '%s\n' "$base/CLAUDE.md"; return 0; }
+  [ -f "$base/SKILL.md" ] && { printf '%s\n' "$base/SKILL.md"; return 0; }
+  return 1
+}
+
+find_knowledge_nodes() {
+  find "$PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
+    -not -path "*/.git/*" -not -path "*/node_modules/*" \
+    -not -path "*/.knowledge-graph/*" 2>/dev/null
+}
 
 # ── JSON-RPC helpers ──────────────────────────────────────────────────────────
 send_response() {
@@ -61,14 +80,16 @@ err_not_found()      { send_error "$1" -32102 "$2"; }
 err_not_initialized(){ send_error "$1" -32103 "Knowledge graph not initialized. Run /knowledge-graph init first."; }
 
 # ── Resource URI helpers ──────────────────────────────────────────────────────
-# kg://node/<rel-path>   → <rel-path>/CLAUDE.md  (e.g. kg://node/bin → bin/CLAUDE.md)
-# kg://node/root         → CLAUDE.md (project root)
+# kg://node/<rel-path>   → canonical node (CLAUDE.md / SKILL.md)
+# kg://claude/<rel-path> → explicit CLAUDE.md
 # kg://index             → .knowledge-graph/knowledge-index.md
 # kg://snapshot          → .knowledge-graph/work-snapshot.md
 uri_to_path() {
   case "$1" in
-    kg://node/root)    echo "$PROJECT_DIR/CLAUDE.md" ;;
-    kg://node/*)       echo "$PROJECT_DIR/${1#kg://node/}/CLAUDE.md" ;;
+    kg://node/root)    knowledge_node_path "root" || true ;;
+    kg://node/*)       knowledge_node_path "${1#kg://node/}" || true ;;
+    kg://claude/root)  echo "$PROJECT_DIR/CLAUDE.md" ;;
+    kg://claude/*)     echo "$PROJECT_DIR/${1#kg://claude/}/CLAUDE.md" ;;
     kg://skill/*)      echo "$PROJECT_DIR/${1#kg://skill/}/SKILL.md" ;;
     kg://index)        echo "$INDEX" ;;
     kg://snapshot)     echo "$SNAPSHOT" ;;
@@ -81,7 +102,10 @@ handle_initialize() {
   local id="$1"
   send_response "$id" "{
     \"protocolVersion\":\"2024-11-05\",
-    \"capabilities\":{\"tools\":{},\"resources\":{\"listChanged\":false}},
+    \"capabilities\":{
+      \"tools\":{\"listChanged\":false},
+      \"resources\":{\"subscribe\":false,\"listChanged\":false}
+    },
     \"serverInfo\":{\"name\":\"knowledge-graph\",\"version\":\"$VERSION\"}
   }"
 }
@@ -92,17 +116,17 @@ handle_tools_list() {
     "tools":[
       {
         "name":"kg_status",
-        "description":"Project health report: coverage (CLAUDE.md count), pending events, last analysis time, top hot zones, blind-spot count, recent failures. Use this as the first call to check whether the knowledge graph is healthy and worth querying.",
+        "description":"Project health report: canonical coverage (CLAUDE.md / SKILL.md count), pending events, last analysis time, top hot zones, blind-spot count, recent failures. Use this as the first call to check whether the knowledge graph is healthy and worth querying.",
         "inputSchema":{"type":"object","properties":{},"required":[]}
       },
       {
         "name":"kg_query",
-        "description":"Full-text search across all knowledge nodes (CLAUDE.md bodies, not just the tag index). Returns ranked matches with file paths and snippet excerpts. Use this to find prohibitions, conventions, or references for a topic.",
+        "description":"Full-text search across canonical knowledge nodes (CLAUDE.md and SKILL.md bodies, not just the tag index). Returns ranked matches with file paths and snippet excerpts. Use this to find prohibitions, conventions, or references for a topic.",
         "inputSchema":{"type":"object","properties":{"question":{"type":"string","description":"Search query (keywords or short phrase)"},"limit":{"type":"integer","description":"Max results to return (default 8)","default":8}},"required":["question"]}
       },
       {
         "name":"kg_read_node",
-        "description":"Fetch the full CLAUDE.md (or SKILL.md) of a specific module. Use after kg_query or kg_predict points you at a module path. Accepts a directory path relative to project root (e.g. \"bin\", \"pipeline/patches\"), or \".\" for the root knowledge node.",
+        "description":"Fetch the canonical knowledge node for a module (CLAUDE.md or SKILL.md). Use after kg_query or kg_predict points you at a module path. Accepts a directory path relative to project root (e.g. \"bin\", \"pipeline/patches\"), or \".\" for the root knowledge node.",
         "inputSchema":{"type":"object","properties":{"module_path":{"type":"string","description":"Module directory relative to project root. Use \".\" for the root."}},"required":["module_path"]}
       },
       {
@@ -122,7 +146,7 @@ handle_tools_list() {
       },
       {
         "name":"kg_blind_spots",
-        "description":"List modules with significant activity but no CLAUDE.md (needing documentation). Use to identify which parts of the codebase lack knowledge coverage.",
+        "description":"List modules with significant activity but no canonical knowledge node (CLAUDE.md or SKILL.md). Use to identify which parts of the codebase lack knowledge coverage.",
         "inputSchema":{"type":"object","properties":{},"required":[]}
       }
     ]
@@ -132,7 +156,7 @@ handle_tools_list() {
 handle_resources_list() {
   local id="$1"
 
-  # Build resources array: each CLAUDE.md / SKILL.md + index + snapshot
+  # Build resources array: each canonical node + index + snapshot
   local resources
   resources=$(
     {
@@ -142,10 +166,8 @@ handle_resources_list() {
       [ -f "$SNAPSHOT" ] && jq -nc \
         '{uri:"kg://snapshot", name:"Work Snapshot", description:"Recent work: active modules, uncommitted changes, recent commits", mimeType:"text/markdown"}'
 
-      # Every CLAUDE.md and SKILL.md in the project
-      find "$PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-        -not -path "*/.git/*" -not -path "*/node_modules/*" \
-        -not -path "*/.knowledge-graph/*" 2>/dev/null | \
+      # Every knowledge node in the project
+      find_knowledge_nodes | \
       while IFS= read -r f; do
         local rel dir uri name fname
         rel="${f#$PROJECT_DIR/}"
@@ -153,6 +175,12 @@ handle_resources_list() {
         fname="$(basename "$f")"
         if [ "$fname" = "SKILL.md" ]; then
           uri="kg://skill/$dir"
+        elif [ "$fname" = "CLAUDE.md" ]; then
+          if [ "$dir" = "." ]; then
+            uri="kg://claude/root"
+          else
+            uri="kg://claude/$dir"
+          fi
         elif [ "$dir" = "." ]; then
           uri="kg://node/root"
         else
@@ -192,9 +220,7 @@ handle_resources_read() {
 tool_kg_status() {
   local id="$1"
   local coverage events last hot blind fails
-  coverage=$(find "$PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-    -not -path "*/.git/*" -not -path "*/node_modules/*" \
-    -not -path "*/.knowledge-graph/*" 2>/dev/null | wc -l | tr -d ' ')
+  coverage=$(find_knowledge_nodes | wc -l | tr -d ' ')
   events=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
   last="never"
   [ -f "$ANALYSIS" ] && last=$(date -r "$ANALYSIS" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "unknown")
@@ -228,16 +254,14 @@ tool_kg_query() {
   if [ -z "$question" ]; then err_empty_arg "$id" "question"; return; fi
   case "$limit" in ''|*[!0-9]*) limit=8 ;; esac
 
-  # Search all CLAUDE.md / SKILL.md bodies, not just the index.
+  # Search all canonical CLAUDE.md / SKILL.md bodies, not just the index.
   # Locally disable pipefail: head -n closes the pipe early, which SIGPIPEs
   # upstream grep/find and would otherwise kill the whole server under
   # `set -euo pipefail`.
   local hits
   set +o pipefail
   hits=$(
-    find "$PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-      -not -path "*/.git/*" -not -path "*/node_modules/*" \
-      -not -path "*/.knowledge-graph/*" 2>/dev/null | \
+    find_knowledge_nodes | \
     while IFS= read -r f; do
       local rel
       rel="${f#$PROJECT_DIR/}"
@@ -265,18 +289,9 @@ tool_kg_read_node() {
   module_path=$(echo "$args" | jq -r '.module_path // ""')
   if [ -z "$module_path" ]; then err_empty_arg "$id" "module_path"; return; fi
 
-  local candidate_c candidate_s
-  if [ "$module_path" = "." ] || [ "$module_path" = "" ] || [ "$module_path" = "root" ]; then
-    candidate_c="$PROJECT_DIR/CLAUDE.md"
-    candidate_s="$PROJECT_DIR/SKILL.md"
-  else
-    candidate_c="$PROJECT_DIR/$module_path/CLAUDE.md"
-    candidate_s="$PROJECT_DIR/$module_path/SKILL.md"
-  fi
-
   local path="" which=""
-  if [ -f "$candidate_c" ]; then path="$candidate_c"; which="CLAUDE.md"; fi
-  [ -z "$path" ] && [ -f "$candidate_s" ] && { path="$candidate_s"; which="SKILL.md"; }
+  path=$(knowledge_node_path "$module_path" 2>/dev/null || true)
+  [ -n "$path" ] && which="$(basename "$path")"
 
   if [ -z "$path" ]; then
     err_not_found "$id" "No CLAUDE.md or SKILL.md at module: $module_path"

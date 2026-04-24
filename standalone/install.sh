@@ -38,9 +38,12 @@ KG_SYNC_CMD='bash "$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/ve
 KG_PRINT_CMD='bash "$CLAUDE_PROJECT_DIR/.claude/skills/knowledge-graph/scripts/version.sh" print'
 KG_VERSION_JSON=$(jq -nc --arg version "$KG_VERSION" --arg commit "$KG_COMMIT" --arg installed_at "$KG_INSTALLED_AT" --arg source_repo "knowledge-graph" '{version:$version, commit:$commit, installed_at:$installed_at, source_repo:$source_repo}')
 KG_ROOT_CLAUDE="$TARGET/CLAUDE.md"
+KG_ROOT_AGENTS="$TARGET/AGENTS.md"
 KG_ROOT_VERSION_PREFIX="Installed Knowledge Graph: "
 KG_ROOT_VERSION_LINE="Installed Knowledge Graph: $KG_VERSION_LINE"
 KG_ROOT_VERSION_HINT="Use version+commit to compare source repo, installed copy, and host project state"
+KG_AGENTS_BEGIN="<!-- knowledge-graph:codex begin -->"
+KG_AGENTS_END="<!-- knowledge-graph:codex end -->"
 
 # ── Migration: detect old installation ────────────────────────────────────────
 if [ -f "$TARGET/.claude/scripts/track-activity.sh" ]; then
@@ -291,20 +294,60 @@ else
   printf '%s\n\n%s\n' "$KG_ROOT_VERSION_LINE" "$KG_ROOT_VERSION_HINT" > "$KG_ROOT_CLAUDE"
 fi
 
+# ── Add Codex operating notes to AGENTS.md ───────────────────────────────────
+AGENTS_BLOCK=$(cat <<EOF
+$KG_AGENTS_BEGIN
+## Knowledge Graph
+
+- Use the bundled MCP server in .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- Durable module knowledge lives in canonical CLAUDE.md and SKILL.md files. AGENTS.md is only the Codex adapter that tells Codex to read those canonical nodes through MCP.
+- Runtime data lives under .knowledge-graph/ and should stay uncommitted.
+- If running scripts outside Claude Code, set KG_PROJECT_DIR to this project root; Claude Code may set CLAUDE_PROJECT_DIR instead.
+- Before reporting success, include concrete evidence: tests run, files checked, or MCP resources consulted.
+$KG_AGENTS_END
+EOF
+)
+
+if [ -f "$KG_ROOT_AGENTS" ]; then
+  python3 - "$KG_ROOT_AGENTS" "$KG_AGENTS_BEGIN" "$KG_AGENTS_END" "$AGENTS_BLOCK" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+begin, end, block = sys.argv[2], sys.argv[3], sys.argv[4]
+text = path.read_text()
+if begin in text and end in text:
+    before = text.split(begin, 1)[0].rstrip()
+    after = text.split(end, 1)[1].lstrip()
+    text = before + "\n\n" + block + "\n\n" + after
+else:
+    text = text.rstrip() + "\n\n" + block + "\n"
+path.write_text(text)
+PY
+else
+  printf '# Project Instructions\n\n%s\n' "$AGENTS_BLOCK" > "$KG_ROOT_AGENTS"
+fi
+info "已更新 AGENTS.md，Codex 可读取 Knowledge Graph 操作说明"
+
 # ── Register MCP server in .mcp.json ─────────────────────────────────────────
 MCP_JSON="$TARGET/.mcp.json"
 MCP_CMD="bash"
 MCP_ARGS="[\"$SKILL_DST/scripts/mcp-server.sh\"]"
+MCP_ENV=$(jq -nc --arg project "$TARGET" '{KG_PROJECT_DIR:$project}')
 if [ -f "$MCP_JSON" ]; then
   if ! jq -e '.mcpServers["knowledge-graph"]' "$MCP_JSON" >/dev/null 2>&1; then
-    jq --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" \
-      '.mcpServers["knowledge-graph"] = {"type": "stdio", "command": $cmd, "args": $args}' \
+    jq --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --argjson env "$MCP_ENV" \
+      '.mcpServers["knowledge-graph"] = {"type": "stdio", "command": $cmd, "args": $args, "env": $env}' \
       "$MCP_JSON" > "$MCP_JSON.tmp" && mv "$MCP_JSON.tmp" "$MCP_JSON"
     info "已在 .mcp.json 中注册 knowledge-graph MCP server"
+  else
+    jq --arg project "$TARGET" \
+      '.mcpServers["knowledge-graph"].env = ((.mcpServers["knowledge-graph"].env // {}) + {KG_PROJECT_DIR: $project}) | del(.mcpServers["knowledge-graph"].env.KG_PRIMARY_NODE_FILE)' \
+      "$MCP_JSON" > "$MCP_JSON.tmp" && mv "$MCP_JSON.tmp" "$MCP_JSON"
+    info "已更新 .mcp.json 中的 KG_PROJECT_DIR"
   fi
 else
-  jq -n --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" \
-    '{"mcpServers": {"knowledge-graph": {"type": "stdio", "command": $cmd, "args": $args}}}' > "$MCP_JSON"
+  jq -n --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --argjson env "$MCP_ENV" \
+    '{"mcpServers": {"knowledge-graph": {"type": "stdio", "command": $cmd, "args": $args, "env": $env}}}' > "$MCP_JSON"
   info "已创建 .mcp.json 并注册 knowledge-graph MCP server"
 fi
 
@@ -328,6 +371,7 @@ echo "  宿主状态元数据: $KG_VERSION_STATUS"
 echo ""
 echo "  下一步："
 echo "  1. 重启 Claude Code session（让 hooks 生效）"
-echo "  2. 运行 /knowledge-graph init 初始化知识图谱"
-echo "  3. 运行 ! $KG_STATUS_CMD 检查版本一致性"
+echo "  2. Codex/MCP 客户端读取 AGENTS.md，并通过 .mcp.json 连接 knowledge-graph"
+echo "  3. 运行 /knowledge-graph init 初始化知识图谱"
+echo "  4. 运行 ! $KG_STATUS_CMD 检查版本一致性"
 echo ""

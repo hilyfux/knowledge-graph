@@ -4,9 +4,10 @@ Based on deep study of Claude Code source (cc-haha) and caveman project, 2026-04
 
 ## Claude Code Internal Mechanisms (verified from source)
 
-### CLAUDE.md Loading
+### Knowledge Node Loading
 - Priority: later loaded = higher attention. Order: Managed → User → Project (root→CWD) → Local
-- Subdirectory CLAUDE.md: lazily loaded via nested traversal when Claude accesses files in that dir
+- Subdirectory `CLAUDE.md`: lazily loaded via nested traversal when Claude accesses files in that dir
+- Codex compatibility: root `AGENTS.md` tells Codex to use MCP; module knowledge remains canonical `CLAUDE.md`
 - @include: max depth 5, circular ref prevented, external includes need approval
 - Size: 40K chars soft limit (flagged but not truncated)
 
@@ -50,10 +51,10 @@ Based on deep study of Claude Code source (cc-haha) and caveman project, 2026-04
 - Gated behind feature flag, may not be universally available
 
 ## Design Decisions Made
-1. Keep subdirectory CLAUDE.md (native lazy loading, O(1) lookup) — not centralize to rules/
+1. Keep subdirectory `CLAUDE.md` as the canonical module knowledge node — not centralize to rules/ and not duplicate into `AGENTS.md`
 2. @include for knowledge-index (system prompt level) — not hook injection
 3. PreCompact guidance (influence compaction) — not just PostCompact recovery
-4. ≤20 line CLAUDE.md with compression rules — not caveman-compress tool (our files already terse)
+4. ≤20 line knowledge nodes with compression rules — not caveman-compress tool (our files already terse)
 
 ---
 
@@ -97,7 +98,7 @@ Based on deep study of Claude Code source (cc-haha) and caveman project, 2026-04
               v
   +-----------------------+
   | LLM reads analysis,   |  Only step using LLM tokens
-  | writes CLAUDE.md      |  Evidence-based: no proof = no rule
+  | writes knowledge node |  Evidence-based: no proof = no rule
   +-----------+-----------+
               |
               v
@@ -114,7 +115,7 @@ Based on deep study of Claude Code source (cc-haha) and caveman project, 2026-04
 | `PreToolUse` (Read) | `track.sh` | Records reads. On first access to a module: predicts related modules and injects their prohibitions. On repeat access: ~5ms no-op. |
 | `PostToolUse` (Write/Edit) | `track.sh` | Records changes. Updates working set. Invalidates prediction cache for changed module. |
 | `PostToolUseFailure` | `track.sh` | Records failures + error messages as learning opportunities. |
-| `InstructionsLoaded` | `track.sh` | Records which `CLAUDE.md` files Claude loaded. |
+| `InstructionsLoaded` | `track.sh` | Records which module knowledge node files were loaded. |
 | `UserPromptSubmit` | `prompt-trigger.sh` | Only responds when user explicitly mentions knowledge graph. |
 | `SessionStart` | `context.sh` | Resets working set. Injects previous work snapshot + update suggestion (if stale). |
 | `PreCompact` | `context.sh` | Saves work snapshot. Tells compactor which specific modules to preserve. |
@@ -138,7 +139,7 @@ Pure bash + jq. Zero LLM tokens. Runs during `update`.
 | Content | `clear` | `compact` | Mechanism |
 |---------|---------|-----------|-----------|
 | Knowledge index | Survives | Survives | `@include` in system prompt |
-| Module CLAUDE.md | Re-loaded on access | Re-loaded on access | Native nested traversal |
+| Module knowledge node | Re-loaded on access | Re-loaded on access | Native nested traversal / MCP resource read |
 | **Working state** | **Restored from snapshot** | **Restored from snapshot** | **Stop/PreCompact save + SessionStart inject** |
 | **Active module prohibitions** | **Re-loaded on access** | **Pinned by working set** | **Working set tracking** |
 | Event data | On disk | On disk | `.knowledge-graph/` — never enters context window |
@@ -193,9 +194,9 @@ your-project/
 │   └── skills/knowledge-graph/        <- Scripts only
 ├── .mcp.json                          <- MCP server registered
 ├── src/
-│   ├── auth/CLAUDE.md                 <- Module knowledge (committed)
+│   ├── auth/CLAUDE.md                 <- Claude module knowledge (committed)
 │   ├── api/CLAUDE.md
 │   └── ...
-└── CLAUDE.md                          <- Root project knowledge
+├── CLAUDE.md                          <- Root Claude project knowledge
+└── AGENTS.md                          <- Root Codex adapter (points to MCP + canonical CLAUDE.md)
 ```
-

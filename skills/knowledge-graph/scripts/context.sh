@@ -22,7 +22,7 @@ case "$CMD" in
     > "$PRED_CACHE" 2>/dev/null
     rm -f "$KG_DATA/.trigger-checked" "$KG_DATA/.update-triggered" 2>/dev/null
 
-    # Knowledge index loaded via @include in .claude/CLAUDE.md (always resident)
+    # Knowledge index loaded via @include in .claude/CLAUDE.md for Claude Code.
 
     # Auto-trigger: if not initialized or active modules missing CLAUDE.md
     if [ ! -f "$KG_DATA/.initialized" ]; then
@@ -37,7 +37,7 @@ case "$CMD" in
       [ -n "$SNAP_CONTENT" ] && CONTEXT="$CONTEXT\n$SNAP_CONTENT"
     fi
 
-    # Auto-update: trigger when active modules lack CLAUDE.md
+    # Auto-update: trigger when active modules lack a knowledge node.
     if [ -f "$EVENTS" ]; then
       PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
 
@@ -48,12 +48,12 @@ case "$CMD" in
           | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10)
         for d in $ACTIVE_DIRS; do
           [ "$d" = "." ] && continue
-          [ ! -f "$CLAUDE_PROJECT_DIR/$d/CLAUDE.md" ] && MISSING_NODES=$((MISSING_NODES + 1))
+          has_knowledge_node "$d" || MISSING_NODES=$((MISSING_NODES + 1))
         done
       fi
 
       if [ "$MISSING_NODES" -gt 0 ]; then
-        emit_hook_context "$(json_escape "[kg auto-trigger] $MISSING_NODES active modules lack CLAUDE.md. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update.")"
+        emit_hook_context "$(json_escape "[kg auto-trigger] $MISSING_NODES active modules lack knowledge nodes. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update.")"
         exit 0
       fi
     fi

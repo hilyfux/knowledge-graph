@@ -6,8 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# Resolve project dir: walk up from script location to find .knowledge-graph/
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-}"
+# Resolve project dir: Claude hooks set CLAUDE_PROJECT_DIR; Codex/MCP installs
+# can set KG_PROJECT_DIR; otherwise walk up from script location.
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${KG_PROJECT_DIR:-}}"
 if [ -z "$PROJECT_DIR" ]; then
   d="$SCRIPT_DIR"
   while [ "$d" != "/" ]; do
@@ -18,8 +19,15 @@ fi
 [ -z "$PROJECT_DIR" ] && PROJECT_DIR="$(pwd)"
 
 export CLAUDE_PROJECT_DIR="$PROJECT_DIR"
+export KG_PROJECT_DIR="$PROJECT_DIR"
 KG_DATA="$PROJECT_DIR/.knowledge-graph"
 EVENTS="$KG_DATA/graph-events.jsonl"
+
+find_knowledge_nodes() {
+  find "$PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
+    -not -path "*/.git/*" -not -path "*/node_modules/*" \
+    -not -path "*/.knowledge-graph/*" 2>/dev/null
+}
 
 send_response() {
   local id="$1" result="$2"
@@ -83,9 +91,9 @@ handle_tool_call() {
     kg_status)
       local result count events text
       result=$(bash "$SCRIPT_DIR/analyze.sh" quick-status 2>/dev/null || echo "status unavailable")
-      count=$(find "$PROJECT_DIR" -name "CLAUDE.md" -not -path "*/.git/*" -not -path "*/node_modules/*" 2>/dev/null | wc -l | tr -d ' ')
+      count=$(find_knowledge_nodes | wc -l | tr -d ' ')
       events=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-      text="$result | CLAUDE.md nodes: $count | pending events: $events"
+      text="$result | knowledge nodes: $count | pending events: $events"
       send_text_response "$id" "$text"
       ;;
 

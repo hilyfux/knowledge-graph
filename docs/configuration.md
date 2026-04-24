@@ -12,8 +12,10 @@ After installation, the relevant files live under:
 └── skills/
     └── knowledge-graph/
         ├── SKILL.md
-        ├── scripts/
-        └── data/
+        └── scripts/
+.knowledge-graph/
+.mcp.json
+AGENTS.md
 ```
 
 ## Hook wiring
@@ -29,14 +31,14 @@ The system relies on these hook moments:
 - `SubagentStart` for propagating constraints into sub-agents
 - `Stop` for pre-analysis when enough events have accumulated
 
-If hooks appear missing, rerun the installer and restart Claude Code.
+If hooks appear missing, rerun the installer and restart Claude Code. Codex does not use these Claude Code hooks; it consumes the same knowledge through `.mcp.json` and the MCP server.
 
 ## Runtime data
 
 Runtime data is local and should stay out of git:
 
 ```text
-.claude/skills/knowledge-graph/data/
+.knowledge-graph/
 ```
 
 Typical contents include:
@@ -45,7 +47,7 @@ Typical contents include:
 - lightweight analysis artifacts
 - temporary state used to decide when to refresh knowledge
 
-The durable knowledge itself is written to `CLAUDE.md` files in your project and can be committed normally.
+The durable knowledge itself is written to canonical module `CLAUDE.md` files and existing `SKILL.md` files. Codex reads those same nodes through MCP; `AGENTS.md` is only an adapter with operating notes.
 
 ## Prompt-triggered updates
 
@@ -78,7 +80,7 @@ The inference engine (`infer.sh`) runs during `/knowledge-graph update` and prov
 
 - `cochange` — files modified together within 10-minute windows
 - `sequences` — repeated read→write patterns revealing implicit dependencies
-- `decay` — evaluates each CLAUDE.md's rule effectiveness (effective / ineffective / stale)
+- `decay` — evaluates each knowledge node's rule effectiveness (effective / ineffective / stale)
 - `predict` — predicts related modules for a given file path
 
 All commands are pure bash + jq with zero LLM cost.
@@ -96,7 +98,9 @@ These defaults aim to keep overhead low while still capturing evolving project c
 
 ## Context survival
 
-Knowledge index is included in `.claude/CLAUDE.md` via `@include` directive, making it part of the system prompt. This survives both `clear` and `compact` natively.
+Knowledge index is included in `.claude/CLAUDE.md` via `@include` directive, making it part of the Claude Code system prompt. This survives both `clear` and `compact` natively.
+
+Codex reads persistent project guidance from `AGENTS.md`. The installer adds a marked Knowledge Graph section that points Codex to `.mcp.json`, `kg_status`, `kg_query`, `kg_read_node`, and `KG_PROJECT_DIR`.
 
 A `PreCompact` hook guides the compactor to preserve prohibitions and error patterns during context compression.
 
@@ -104,8 +108,8 @@ A `PreCompact` hook guides the compactor to preserve prohibitions and error patt
 
 Recommended setup for teams:
 
-1. Commit generated `CLAUDE.md` knowledge files.
-2. Ignore runtime data under `.claude/skills/knowledge-graph/data/`.
+1. Commit generated canonical knowledge nodes (`CLAUDE.md` and relevant `SKILL.md` files).
+2. Ignore runtime data under `.knowledge-graph/`.
 3. Review important knowledge changes like any other documentation diff.
 4. Let each contributor keep their local runtime event history private.
 
@@ -123,6 +127,8 @@ This is the easiest way to refresh scripts and hook wiring without manually edit
 
 - `jq` is installed and available in `PATH`
 - `.claude/settings.json` includes Knowledge Graph hooks
+- `.mcp.json` includes the `knowledge-graph` MCP server with `KG_PROJECT_DIR`
+- `AGENTS.md` includes the marked Knowledge Graph section for Codex
 - Claude Code has been restarted after install or reinstall
 - the target project is writable
-- generated `CLAUDE.md` files are not being accidentally deleted by cleanup scripts
+- generated knowledge node files are not being accidentally deleted by cleanup scripts

@@ -267,6 +267,50 @@ bash "$SCRIPT_DIR/analyze.sh" analyze 2>/dev/null || true
 BROKEN=$(jq -r '.broken_refs | length' "$TMPDIR5/.knowledge-graph/graph-analysis.json" 2>/dev/null)
 assert_eq "cross-module @ref resolves (not broken)" "0" "$BROKEN"
 
+# ── Test 13: non-Claude env fallback (Codex / MCP) ───────────────────────────
+echo ""
+echo "Test 13: scripts resolve KG_PROJECT_DIR without CLAUDE_PROJECT_DIR"
+TMPDIR6=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6"' EXIT
+unset CLAUDE_PROJECT_DIR
+export KG_PROJECT_DIR="$TMPDIR6"
+mkdir -p "$TMPDIR6/.knowledge-graph"
+OUT13=$(bash "$SCRIPT_DIR/analyze.sh" quick-status 2>/dev/null || true)
+assert_eq "analyze status works with KG_PROJECT_DIR" "true" \
+  "$(echo "$OUT13" | grep -q 'Pending events:' && echo true || echo false)"
+assert_eq "guard exports CLAUDE_PROJECT_DIR fallback" "true" \
+  "$(bash -c 'source "$1/guard.sh"; [ "$CLAUDE_PROJECT_DIR" = "$KG_PROJECT_DIR" ] && echo true || echo false' _ "$SCRIPT_DIR")"
+unset KG_PROJECT_DIR
+export CLAUDE_PROJECT_DIR="$TMPDIR5"
+
+# ── Test 14: AGENTS.md is adapter-only; CLAUDE.md remains canonical ──────────
+echo ""
+echo "Test 14: AGENTS.md does not satisfy canonical module knowledge"
+TMPDIR7=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7"' EXIT
+export CLAUDE_PROJECT_DIR="$TMPDIR7"
+mkdir -p "$TMPDIR7/.knowledge-graph" "$TMPDIR7/codex-mod"
+printf '# codex adapter\n## Prohibitions\n- Adapter-only rule\n' > "$TMPDIR7/codex-mod/AGENTS.md"
+EV7="$TMPDIR7/.knowledge-graph/graph-events.jsonl"
+for i in 1 2 3 4; do
+  printf '{"e":"w:edit","p":"codex-mod/file%d.ts","t":%d}\n' "$i" "$(date +%s)" >> "$EV7"
+  printf '{"e":"r","p":"codex-mod/file%d.ts","t":%d}\n' "$i" "$(date +%s)" >> "$EV7"
+done
+bash "$SCRIPT_DIR/analyze.sh" analyze 2>/dev/null || true
+BLIND7=$(jq -r '.blind_spots | join(",")' "$TMPDIR7/.knowledge-graph/graph-analysis.json" 2>/dev/null)
+assert_eq "AGENTS.md-only dir remains blind_spot" "true" \
+  "$([ "${BLIND7/codex-mod/}" != "$BLIND7" ] && echo true || echo false)"
+printf '# codex-mod\n## Prohibitions\n- Canonical rule\n' > "$TMPDIR7/codex-mod/CLAUDE.md"
+bash "$SCRIPT_DIR/analyze.sh" analyze 2>/dev/null || true
+BLIND7B=$(jq -r '.blind_spots | join(",")' "$TMPDIR7/.knowledge-graph/graph-analysis.json" 2>/dev/null)
+assert_eq "CLAUDE.md dir not in blind_spots" "true" \
+  "$([ "${BLIND7B/codex-mod/}" = "$BLIND7B" ] && echo true || echo false)"
+MCP7=$(printf '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"kg_read_node","arguments":{"module_path":"codex-mod"}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "kg_read_node reads canonical CLAUDE.md" "true" \
+  "$(echo "$MCP7" | grep -q 'Canonical rule' && echo true || echo false)"
+assert_eq "kg_read_node ignores adapter AGENTS.md" "true" \
+  "$(echo "$MCP7" | grep -q 'Adapter-only rule' && echo false || echo true)"
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
 echo "════════════════════════════════════"

@@ -1,12 +1,12 @@
 # Installation Guide
 
-Knowledge Graph is designed to be easy to adopt in an existing Claude Code workflow.
+Knowledge Graph is designed to be easy to adopt in Claude Code, while exposing the same durable knowledge to Codex and other MCP-aware agents.
 
 ## Requirements
 
 - `bash` (macOS/Linux: native; Windows: Git Bash or WSL)
 - `jq`
-- Claude Code project with a writable `.claude/` directory
+- Project directory where the installer can write `.claude/`, `.mcp.json`, `AGENTS.md`, and `.knowledge-graph/`
 
 Install `jq` if needed:
 
@@ -57,9 +57,9 @@ cd knowledge-graph
 
 The PowerShell installer mirrors the bash one: copies the skill to
 `.claude\skills\knowledge-graph\`, merges hooks into `.claude\settings.json`,
-registers the MCP server in `.mcp.json`, and adds `.knowledge-graph/` to
-`.gitignore`. Runtime still uses the `.sh` scripts — Claude Code's hooks run
-them via the bash on your PATH.
+registers the MCP server in `.mcp.json`, writes Codex notes to `AGENTS.md`,
+and adds `.knowledge-graph/` to `.gitignore`. Runtime still uses the `.sh`
+scripts, so bash must be on your PATH.
 
 > If you see `bash not found` or `jq not found` from `install.ps1`, install the
 > missing tool using the commands in the Requirements section above, restart
@@ -82,14 +82,21 @@ It also wires the required hooks into:
 And creates the local event log:
 
 ```text
-.claude/skills/knowledge-graph/data/graph-events.jsonl
+.knowledge-graph/graph-events.jsonl
+```
+
+For Codex and other MCP clients it also updates:
+
+```text
+.mcp.json
+AGENTS.md
 ```
 
 ## After install
 
-1. Restart Claude Code so hooks reload.
-2. Run `/knowledge-graph init`.
-3. Start using Claude Code normally.
+1. Restart Claude Code so hooks reload, if you use Claude Code.
+2. In Codex, read `AGENTS.md` and connect the `knowledge-graph` MCP server from `.mcp.json`. Codex reads canonical module `CLAUDE.md` through MCP instead of maintaining duplicate module `AGENTS.md` files.
+3. Run `/knowledge-graph init` in Claude Code, or start with `kg_status` / `kg_query` / `kg_read_node` in Codex.
 
 ## Reinstalling
 
