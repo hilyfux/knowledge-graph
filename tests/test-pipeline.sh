@@ -45,6 +45,18 @@ assert_eq() {
   fi
 }
 
+assert_true() {
+  local label="$1" command="$2"
+  TOTAL=$((TOTAL + 1))
+  if eval "$command"; then
+    echo "  PASS: $label"
+    PASS=$((PASS + 1))
+  else
+    echo "  FAIL: $label"
+    FAIL=$((FAIL + 1))
+  fi
+}
+
 # ── Generate 1000-line synthetic event file ──────────────────────────────────
 echo "Generating 1000-line event file..."
 NOW=$(date +%s)
@@ -310,6 +322,14 @@ assert_eq "kg_read_node reads canonical CLAUDE.md" "true" \
   "$(echo "$MCP7" | grep -q 'Canonical rule' && echo true || echo false)"
 assert_eq "kg_read_node ignores adapter AGENTS.md" "true" \
   "$(echo "$MCP7" | grep -q 'Adapter-only rule' && echo false || echo true)"
+
+# ── Test 8: standalone/source script parity ──────────────────────────────────
+echo ""
+echo "Test 8: standalone/source script parity"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
+  assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
+done
 
 # ── Summary ──────────────────────────────────────────────────────────────────
 echo ""
