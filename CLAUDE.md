@@ -75,3 +75,7 @@ target-project/
 ## Commit Conventions
 
 Uses conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `release:`
+
+Installed Knowledge Graph: v1.3.1+e173219
+
+Use version+commit to compare source repo, installed copy, and host project state

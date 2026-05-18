@@ -141,11 +141,11 @@ Cross-module patterns with same error → generate `.claude/rules/{name}.md` wit
 
 <step id="5" name="init-data">
 ```bash
-mkdir -p "$CLAUDE_PROJECT_DIR/.knowledge-graph"
-touch "$CLAUDE_PROJECT_DIR/.knowledge-graph/graph-events.jsonl"
-date +%s > "$CLAUDE_PROJECT_DIR/.knowledge-graph/.initialized"
+bash "${CLAUDE_SKILL_DIR}/scripts/analyze.sh" init-data
 ```
-Delete temp file `.knowledge-graph/graph-scan.json`.
+This initializes `.knowledge-graph/graph-events.jsonl` + `.initialized` through
+`guard.sh` so the project dir is resolved robustly. Delete temp file
+`.knowledge-graph/graph-scan.json` afterwards.
 </step>
 
 <step id="6" name="index">
@@ -180,9 +180,11 @@ Output: "Init complete: {X} modules / {Y} new knowledge nodes / {Z} appended sec
 
 <step id="0" name="lock">
 ```bash
-touch "$CLAUDE_PROJECT_DIR/.knowledge-graph/.kg-updating"
+bash "${CLAUDE_SKILL_DIR}/scripts/analyze.sh" lock
 ```
-Prevents hooks from re-triggering during update. Removed in step 5.
+Acquires the update lock through `guard.sh` so the project dir is resolved
+even when the Bash tool's shell doesn't inherit `$CLAUDE_PROJECT_DIR`.
+Prevents hooks from re-triggering during update. Released in step 5.
 </step>
 
 <step id="1" name="scan-new">
@@ -265,7 +267,10 @@ When event_count < 15, skip P6-P8.
 2. Delete `.knowledge-graph/graph-analysis.json` (temp cache)
 3. Delete `.knowledge-graph/graph-infer.json` (temp cache)
 4. Regenerate `.knowledge-graph/knowledge-index.md` (same format as init step 6)
-5. Remove lock: `rm -f "$CLAUDE_PROJECT_DIR/.knowledge-graph/.kg-updating"`
+5. Release lock + reset auto-trigger counter:
+   ```bash
+   bash "${CLAUDE_SKILL_DIR}/scripts/analyze.sh" unlock
+   ```
 6. Output: "Update complete: {N} new modules / {N} repaired / {N} rules / {N} dependencies discovered / {N} decayed"
 </step>
 

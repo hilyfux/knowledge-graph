@@ -43,6 +43,26 @@ case "$CMD" in
     # Update working set
     ws_touch "$TS" "$TARGET_DIR" "w"
 
+    # Recurring auto-trigger: every WRITE_TRIGGER_THRESHOLD writes since last
+    # successful update, drop a `.update-pending` marker so the next user
+    # prompt re-injects the [kg auto-trigger] context. Counter resets when
+    # the skill's update step 5 calls `analyze.sh unlock`. Threshold can be
+    # overridden via KG_UPDATE_THRESHOLD (default 15).
+    THRESHOLD=${KG_UPDATE_THRESHOLD:-15}
+    COUNTER_FILE="$KG_DATA/.writes-since-update"
+    UPDATE_PENDING="$KG_DATA/.update-pending"
+    UPDATE_LOCK="$KG_DATA/.kg-updating"
+    if [ ! -f "$UPDATE_LOCK" ] && [ ! -f "$UPDATE_PENDING" ]; then
+      WROTE=0
+      [ -f "$COUNTER_FILE" ] && WROTE=$(cat "$COUNTER_FILE" 2>/dev/null | tr -d ' \n' || echo 0)
+      case "$WROTE" in ''|*[!0-9]*) WROTE=0 ;; esac
+      WROTE=$((WROTE + 1))
+      printf '%s\n' "$WROTE" > "$COUNTER_FILE" 2>/dev/null
+      if [ "$WROTE" -ge "$THRESHOLD" ]; then
+        touch "$UPDATE_PENDING" 2>/dev/null
+      fi
+    fi
+
     # Mid-session analysis trigger: long sessions may never hit Stop, so keep
     # graph-analysis.json reasonably fresh once event backlog grows. Fire in the
     # background, throttled by age + lock to stay within hook timeout budget.

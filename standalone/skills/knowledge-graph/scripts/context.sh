@@ -21,6 +21,9 @@ case "$CMD" in
     > "$WS_WRITE_SET" 2>/dev/null
     > "$PRED_CACHE" 2>/dev/null
     rm -f "$KG_DATA/.trigger-checked" "$KG_DATA/.update-triggered" 2>/dev/null
+    # Recurring write-counter trigger: clear at session start so the new
+    # session counts from zero (avoids replaying a stale .update-pending).
+    rm -f "$KG_DATA/.update-pending" "$KG_DATA/.writes-since-update" 2>/dev/null
 
     # Knowledge index loaded via @include in .claude/CLAUDE.md for Claude Code.
 
