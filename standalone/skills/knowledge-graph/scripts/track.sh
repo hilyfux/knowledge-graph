@@ -93,6 +93,14 @@ case "$CMD" in
     TARGET_DIR=$(dirname "${FILE_PATH#$PREFIX}")
     UPDATE_MARKER="$KG_DATA/.update-triggered"
 
+    # Never block writes that themselves create the knowledge node — otherwise
+    # the skill's own update-mode write gets blocked by the very condition it
+    # is trying to resolve (paradox loop).
+    BASENAME=$(basename "$FILE_PATH")
+    if [ "$BASENAME" = "CLAUDE.md" ] || [ "$BASENAME" = "SKILL.md" ] || [ "$BASENAME" = "AGENTS.md" ]; then
+      exit 0
+    fi
+
     # One-time per session: block if writing to module without a knowledge node
     if [ ! -f "$UPDATE_MARKER" ] && [ -f "$KG_DATA/.initialized" ]; then
       if [ "$TARGET_DIR" != "." ] && ! has_knowledge_node "$TARGET_DIR"; then

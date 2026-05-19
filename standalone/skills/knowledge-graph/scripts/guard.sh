@@ -177,11 +177,17 @@ save_snapshot() {
       awk -F'\t' '
         {r[$2]+=($3=="r"); w[$2]+=($3=="w"); total[$2]++}
         END {for(d in total) printf "%d\t%s\t%d\t%d\n",total[d],d,r[d],w[d]}
-      ' "$WS" 2>/dev/null | sort -rn | head -8 | awk -F'\t' '{printf "- %s (r:%s w:%s)\n",$2,$3,$4}'
+      ' "$WS" 2>/dev/null | sort -rn | head -16 \
+        | awk -F'\t' -v root="$CLAUDE_PROJECT_DIR" '
+          { if (system("test -d \"" root "/" $2 "\"") == 0) print }
+        ' | head -8 | awk -F'\t' '{printf "- %s (r:%s w:%s)\n",$2,$3,$4}'
 
       # Dirty modules
       local dirty
-      dirty=$(ws_dirty)
+      dirty=$(ws_dirty | while IFS= read -r d; do
+        [ -z "$d" ] && continue
+        [ -d "$CLAUDE_PROJECT_DIR/$d" ] && echo "$d"
+      done)
       if [ -n "$dirty" ]; then
         printf '\n## 修改的模块\n'
         echo "$dirty" | sed 's/^/- /'
