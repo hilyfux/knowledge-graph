@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed — Auto-update no longer blocks its own knowledge-node writes
+
+The PreToolUse(Write) guard used to block every write into a module that lacked a knowledge node — including the write that *created* `CLAUDE.md`. When the skill ran update mode, its own node-creation write was blocked by the very condition it was trying to resolve. Writes to `CLAUDE.md` / `SKILL.md` / `AGENTS.md` are now exempt.
+
+### Fixed — Snapshot no longer leaks phantom cross-project modules
+
+`save_snapshot` filters out modules whose directories no longer exist on disk, so stale entries from prior sessions (e.g. another project's `src/`) stop appearing in the SessionStart context.
+
 ### Changed — Long sessions keep analysis and snapshots fresher
 
 - `track.sh write` now triggers a throttled background refresh of
