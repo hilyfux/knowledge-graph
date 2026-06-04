@@ -510,6 +510,28 @@ assert_eq "project .mcp.json has startup timeout" "true" \
   "$(jq -e '.mcpServers["knowledge-graph"].startup_timeout_sec == 60' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "project .mcp.json points at installed server" "true" \
   "$(jq -e --arg p "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.mcpServers["knowledge-graph"].args == [$p]' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+TARGET8_EXISTING="$TMPDIR10/project-existing"
+mkdir -p "$TARGET8_EXISTING"
+printf '{"mcpServers": null, "preserve": "yes"}\n' > "$TARGET8_EXISTING/.mcp.json"
+HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_EXISTING" >/dev/null 2>&1
+assert_eq "installer normalizes missing mcpServers object" "true" \
+  "$(jq -e --arg p "$TARGET8_EXISTING/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.preserve == "yes" and .mcpServers["knowledge-graph"].args == [$p] and .mcpServers["knowledge-graph"].startup_timeout_sec == 60' "$TARGET8_EXISTING/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+TARGET8_BAD_SHAPE="$TMPDIR10/project-bad-shape"
+mkdir -p "$TARGET8_BAD_SHAPE"
+printf '{"mcpServers":[]}\n' > "$TARGET8_BAD_SHAPE/.mcp.json"
+BAD_SHAPE_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_BAD_SHAPE" 2>&1 || true)
+assert_eq "installer rejects non-object mcpServers clearly" "true" \
+  "$(echo "$BAD_SHAPE_OUT" | grep -q 'mcpServers 必须是 object' && echo true || echo false)"
+assert_eq "installer preserves invalid-shaped .mcp.json" '{"mcpServers":[]}' \
+  "$(tr -d '\n' < "$TARGET8_BAD_SHAPE/.mcp.json")"
+TARGET8_BAD_JSON="$TMPDIR10/project-bad-json"
+mkdir -p "$TARGET8_BAD_JSON"
+printf '{"mcpServers":\n' > "$TARGET8_BAD_JSON/.mcp.json"
+BAD_JSON_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_BAD_JSON" 2>&1 || true)
+assert_eq "installer rejects malformed .mcp.json clearly" "true" \
+  "$(echo "$BAD_JSON_OUT" | grep -q '.mcp.json 必须是 JSON object' && echo true || echo false)"
+assert_eq "installer preserves malformed .mcp.json" '{"mcpServers":' \
+  "$(tr -d '\n' < "$TARGET8_BAD_JSON/.mcp.json")"
 HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$HOME8" 2>&1 || true)
 assert_eq "installer rejects HOME as target" "true" \
   "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"

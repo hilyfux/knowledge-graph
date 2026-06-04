@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed — Installer validates existing project MCP JSON before writing
+
+`standalone/install.sh` now checks an existing project `.mcp.json` before any
+install side effects. Missing or `null` `mcpServers` is normalized to an object,
+while malformed JSON or non-object `mcpServers` is rejected with a clear error
+and the existing file is left untouched.
+
 ### Changed — MCP resource scans skip runtime and generated directories
 
 `mcp-server.sh` now prunes `.claude`, `.knowledge-graph`, `.worktrees`,

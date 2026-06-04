@@ -21,6 +21,18 @@ fi
 [ "$TARGET" = "/" ]     && error "不能安装到根目录"
 [ ! -d "$TARGET" ]      && error "目标目录不存在：$TARGET"
 
+MCP_JSON="$TARGET/.mcp.json"
+
+validate_mcp_json() {
+  local mcp_json="$1"
+  [ -f "$mcp_json" ] || return 0
+  if ! jq -e 'type == "object" and ((has("mcpServers") | not) or (.mcpServers == null) or (.mcpServers | type == "object"))' "$mcp_json" >/dev/null 2>&1; then
+    error ".mcp.json 必须是 JSON object，且 mcpServers 必须是 object：$mcp_json"
+  fi
+}
+
+validate_mcp_json "$MCP_JSON"
+
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_SRC="$INSTALL_DIR/skills/knowledge-graph"
 SKILL_DST="$TARGET/.claude/skills/knowledge-graph"
@@ -330,7 +342,6 @@ fi
 info "已更新 AGENTS.md，Codex 可读取 Knowledge Graph 操作说明"
 
 # ── Register MCP server in .mcp.json ─────────────────────────────────────────
-MCP_JSON="$TARGET/.mcp.json"
 MCP_CMD="bash"
 MCP_ARGS="[\"$SKILL_DST/scripts/mcp-server.sh\"]"
 MCP_ENV=$(jq -nc --arg project "$TARGET" '{KG_PROJECT_DIR:$project}')
