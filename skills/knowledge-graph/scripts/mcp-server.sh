@@ -407,6 +407,10 @@ while IFS= read -r line; do
       handle_tools_list "$id"
       ;;
     tools/call)
+      if ! echo "$line" | jq -e '(.params | type == "object") and (.params.name | type == "string" and length > 0) and ((.params | has("arguments") | not) or (.params.arguments | type == "object"))' >/dev/null 2>&1; then
+        send_error "$id" -32602 "Invalid params: tools/call requires object params with string name and object arguments"
+        continue
+      fi
       tool_name=$(echo "$line" | jq -r '.params.name // ""')
       tool_args=$(echo "$line" | jq -c '.params.arguments // {}')
       handle_tool_call "$id" "$tool_name" "$tool_args"

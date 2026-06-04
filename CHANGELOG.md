@@ -14,6 +14,12 @@ querying canonical `CLAUDE.md` / `SKILL.md` nodes. This keeps Codex/MCP results
 focused on durable project knowledge and avoids wasting time on runtime copies
 or generated files.
 
+### Changed — Predict inference uses fewer subprocesses
+
+`infer.sh predict` now parses recent event lines with a single raw-input jq pass
+instead of `jq | jq`, preserving corrupt-line tolerance while reducing hook
+latency for Codex/Claude prediction calls.
+
 ### Fixed — MCP JSON-RPC responses preserve string ids
 
 `mcp-server.sh` now keeps JSON-RPC request ids as JSON values instead of
@@ -26,6 +32,12 @@ other MCP clients.
 Malformed JSON now returns `-32700` parse errors, and valid non-object JSON now
 returns `-32600` invalid-request errors. This gives MCP clients explicit
 failure signals instead of silent no-response behavior.
+
+### Fixed — MCP validates tools/call params before dispatch
+
+`tools/call` now returns `-32602` invalid-params errors when `params` is missing,
+not an object, lacks a string `name`, or provides non-object `arguments`. This
+prevents malformed client calls from crashing the stdio server.
 
 ### Fixed — Codex MCP registration is project-level only
 

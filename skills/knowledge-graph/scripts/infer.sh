@@ -128,8 +128,9 @@ case "$CMD" in
     [ -z "$TARGET_DIR" ] && exit 0
 
     # Primary: predict from event history (recent 300 lines)
-    RESULT=$(tail -300 "$EVENTS" 2>/dev/null | jq -c '.' 2>/dev/null | jq -s --arg dir "$TARGET_DIR" '
-      [.[] | select(.e | startswith("w"))] |
+    RESULT=$(tail -300 "$EVENTS" 2>/dev/null | jq -Rsc --arg dir "$TARGET_DIR" '
+      split("\n") | map(fromjson? | select(type == "object")) |
+      [.[] | select((.e // "") | startswith("w"))] |
       sort_by(.t) |
       reduce .[] as $ev (
         {windows: [], current: [], last_t: 0};
