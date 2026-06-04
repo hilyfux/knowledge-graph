@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed — MCP initialize guides Codex toward low-cost context use
+
+`mcp-server.sh` now returns concise MCP `instructions` during initialization.
+Codex can use this server-wide guidance to call `kg_status` first, query/read
+canonical nodes before unfamiliar edits, use prediction for related modules,
+and avoid committing `.knowledge-graph/` runtime data.
+
 ### Fixed — Codex MCP timeout is written to project config.toml
 
 `standalone/install.sh` now writes a managed Knowledge Graph MCP block to

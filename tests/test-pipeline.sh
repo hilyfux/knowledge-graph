@@ -385,6 +385,8 @@ assert_eq "initialize with string id returns valid JSON" "true" \
   "$(echo "$MCP16_INIT" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "initialize preserves string id" "true" \
   "$(echo "$MCP16_INIT" | jq -e '.id == "req-init"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "initialize includes concise server instructions" "true" \
+  "$(echo "$MCP16_INIT" | jq -e '(.result.instructions | type == "string") and (.result.instructions | length <= 512) and (.result.instructions | contains("kg_status")) and (.result.instructions | contains("kg_query")) and (.result.instructions | contains("kg_read_node")) and (.result.instructions | contains(".knowledge-graph/"))' >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "tool call with string id returns valid JSON" "true" \
   "$(echo "$MCP16_TOOL" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "tool call preserves string id" "true" \

@@ -34,6 +34,7 @@ EVENTS="$KG_DATA/graph-events.jsonl"
 ANALYSIS="$KG_DATA/graph-analysis.json"
 INDEX="$KG_DATA/knowledge-index.md"
 SNAPSHOT="$KG_DATA/work-snapshot.md"
+MCP_INSTRUCTIONS='Use kg_status first to check graph health. Before editing unfamiliar code, use kg_query to find rules, then kg_read_node for relevant CLAUDE.md/SKILL.md nodes. Use kg_predict before edits for related modules and kg_recent_work on resume. Treat .knowledge-graph/ as runtime data: read through tools/resources, do not commit it.'
 
 knowledge_node_path() {
   local module_path="$1" base
@@ -135,7 +136,8 @@ handle_initialize() {
       \"tools\":{\"listChanged\":false},
       \"resources\":{\"subscribe\":false,\"listChanged\":false}
     },
-    \"serverInfo\":{\"name\":\"knowledge-graph\",\"version\":\"$VERSION\"}
+    \"serverInfo\":{\"name\":\"knowledge-graph\",\"version\":\"$VERSION\"},
+    \"instructions\":$(jq -Rn --arg v "$MCP_INSTRUCTIONS" '$v')
   }"
 }
 
