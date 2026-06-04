@@ -51,6 +51,12 @@ malformed MCP resource reads from crashing the stdio server.
 and resource URIs. MCP clients cannot use `..` segments to read adjacent
 projects or parent-directory `CLAUDE.md` / `SKILL.md` files.
 
+### Fixed — MCP notifications do not emit responses
+
+Known JSON-RPC methods without an `id` are now treated as notifications and do
+not write response objects to stdout. This avoids polluting MCP stdio streams
+when clients send fire-and-forget protocol messages.
+
 ### Fixed — Codex MCP registration is project-level only
 
 The installer no longer calls `codex mcp add` or writes user-level Codex config.

@@ -421,8 +421,13 @@ while IFS= read -r line; do
     continue
   fi
 
-  method=$(echo "$line" | jq -r '.method // ""' 2>/dev/null || echo "")
-  id=$(echo "$line" | jq -c 'if has("id") then .id else null end' 2>/dev/null || echo "null")
+  rpc_meta=$(echo "$line" | jq -r '[if has("id") then "true" else "false" end, (if has("id") then (.id | tojson) else "null" end), (.method // "")] | @tsv' 2>/dev/null || printf 'false\tnull\t')
+  IFS="$(printf '\t')" read -r has_id id method <<EOF
+$rpc_meta
+EOF
+  if [ "$has_id" != "true" ] && [ -n "$method" ]; then
+    continue
+  fi
 
   case "$method" in
     initialize)

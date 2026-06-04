@@ -380,9 +380,19 @@ assert_eq "malformed JSON returns parse error" "true" \
 assert_eq "non-object JSON returns invalid request" "true" \
   "$(echo "$MCP17_INVALID" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
 
-# ── Test 18: MCP validates tools/call params shape ───────────────────────────
+# ── Test 18: MCP does not respond to JSON-RPC notifications ──────────────────
 echo ""
-echo "Test 18: MCP validates tools/call params shape"
+echo "Test 18: MCP does not respond to JSON-RPC notifications"
+MCP18_NOTIFY=$(printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","method":"tools/list","params":{}}' \
+  '{"jsonrpc":"2.0","method":"resources/list","params":{}}' \
+  '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"kg_status","arguments":{}}}' \
+  | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "known-method notifications produce no stdout" "" "$MCP18_NOTIFY"
+
+# ── Test 19: MCP validates tools/call params shape ───────────────────────────
+echo ""
+echo "Test 19: MCP validates tools/call params shape"
 MCP18_ARRAY=$(printf '{"jsonrpc":"2.0","id":18,"method":"tools/call","params":[]}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 MCP18_MISSING=$(printf '{"jsonrpc":"2.0","id":19,"method":"tools/call"}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 assert_eq "tools/call array params returns invalid params" "true" \
@@ -390,9 +400,9 @@ assert_eq "tools/call array params returns invalid params" "true" \
 assert_eq "tools/call missing params returns invalid params" "true" \
   "$(echo "$MCP18_MISSING" | jq -e '.jsonrpc == "2.0" and .id == 19 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
 
-# ── Test 19: MCP validates resources/read params shape ───────────────────────
+# ── Test 20: MCP validates resources/read params shape ───────────────────────
 echo ""
-echo "Test 19: MCP validates resources/read params shape"
+echo "Test 20: MCP validates resources/read params shape"
 MCP19_ARRAY=$(printf '{"jsonrpc":"2.0","id":20,"method":"resources/read","params":[]}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 MCP19_MISSING=$(printf '{"jsonrpc":"2.0","id":21,"method":"resources/read"}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 MCP19_BAD_URI=$(printf '{"jsonrpc":"2.0","id":22,"method":"resources/read","params":{"uri":123}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
@@ -403,9 +413,9 @@ assert_eq "resources/read missing params returns invalid params" "true" \
 assert_eq "resources/read non-string uri returns invalid params" "true" \
   "$(echo "$MCP19_BAD_URI" | jq -e '.jsonrpc == "2.0" and .id == 22 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
 
-# ── Test 20: MCP confines resource paths to project root ─────────────────────
+# ── Test 21: MCP confines resource paths to project root ─────────────────────
 echo ""
-echo "Test 20: MCP confines resource paths to project root"
+echo "Test 21: MCP confines resource paths to project root"
 TMPDIR9=$(mktemp -d)
 trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9"' EXIT
 PROJECT9="$TMPDIR9/project"
@@ -426,9 +436,9 @@ assert_eq "path traversal does not leak outside node content" "true" \
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# ── Test 21: installer stays project-level only for Codex/MCP ────────────────
+# ── Test 22: installer stays project-level only for Codex/MCP ────────────────
 echo ""
-echo "Test 21: installer stays project-level only for Codex/MCP"
+echo "Test 22: installer stays project-level only for Codex/MCP"
 TMPDIR10=$(mktemp -d)
 trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9" "$TMPDIR10"' EXIT
 TARGET8="$TMPDIR10/project"
@@ -472,9 +482,9 @@ HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standal
 assert_eq "installer rejects HOME as target" "true" \
   "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
 
-# ── Test 22: standalone/source script parity ─────────────────────────────────
+# ── Test 23: standalone/source script parity ─────────────────────────────────
 echo ""
-echo "Test 22: standalone/source script parity"
+echo "Test 23: standalone/source script parity"
 for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
   assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
 done
