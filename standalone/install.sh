@@ -300,6 +300,7 @@ $KG_AGENTS_BEGIN
 ## Knowledge Graph
 
 - Use the bundled MCP server in .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- For Codex CLI, verify the server is loaded with `codex mcp list`; the installer attempts `codex mcp add knowledge-graph` when `codex` is available.
 - Durable module knowledge lives in canonical CLAUDE.md and SKILL.md files. AGENTS.md is only the Codex adapter that tells Codex to read those canonical nodes through MCP.
 - Runtime data lives under .knowledge-graph/ and should stay uncommitted.
 - If running scripts outside Claude Code, set KG_PROJECT_DIR to this project root; Claude Code may set CLAUDE_PROJECT_DIR instead.
@@ -351,6 +352,32 @@ else
   info "已创建 .mcp.json 并注册 knowledge-graph MCP server"
 fi
 
+# ── Register Codex CLI MCP server when available ─────────────────────────────
+# Codex CLI currently loads MCP servers from its active session/user config; it
+# does not reliably auto-load project .mcp.json. Keep .mcp.json for generic MCP
+# clients, and also register the same stdio server with Codex when possible.
+if command -v codex >/dev/null 2>&1; then
+  CODEX_CAN_ADD=true
+  if codex mcp get knowledge-graph >/dev/null 2>&1; then
+    if codex mcp remove knowledge-graph >/dev/null 2>&1; then
+      info "已移除旧的 Codex CLI knowledge-graph MCP server"
+    else
+      CODEX_CAN_ADD=false
+      warn "检测到 Codex CLI 已有 knowledge-graph MCP server，但无法更新；请手动检查：codex mcp list"
+    fi
+  fi
+
+  if [ "$CODEX_CAN_ADD" = true ]; then
+    if codex mcp add knowledge-graph --env "KG_PROJECT_DIR=$TARGET" -- bash "$SKILL_DST/scripts/mcp-server.sh" >/dev/null 2>&1; then
+      info "已在 Codex CLI 注册 knowledge-graph MCP server"
+    else
+      warn "Codex CLI MCP 注册失败；可手动执行：codex mcp add knowledge-graph --env KG_PROJECT_DIR=\"$TARGET\" -- bash \"$SKILL_DST/scripts/mcp-server.sh\""
+    fi
+  fi
+else
+  warn "未检测到 Codex CLI；已保留 .mcp.json，Codex 用户可稍后运行 codex mcp add 注册"
+fi
+
 # ── Update .gitignore ──────────────────────────────────────────────────────────
 GITIGNORE="$TARGET/.gitignore"
 if [ -f "$GITIGNORE" ]; then
@@ -371,7 +398,7 @@ echo "  宿主状态元数据: $KG_VERSION_STATUS"
 echo ""
 echo "  下一步："
 echo "  1. 重启 Claude Code session（让 hooks 生效）"
-echo "  2. Codex/MCP 客户端读取 AGENTS.md，并通过 .mcp.json 连接 knowledge-graph"
+echo "  2. Codex CLI 运行 codex mcp list 确认 knowledge-graph 已加载；其他 MCP 客户端读取 .mcp.json"
 echo "  3. 运行 /knowledge-graph init 初始化知识图谱"
 echo "  4. 运行 ! $KG_STATUS_CMD 检查版本一致性"
 echo ""

@@ -45,7 +45,7 @@ cd knowledge-graph
 Then:
 
 1. Restart Claude Code so hooks activate, or connect your MCP-aware agent.
-2. For Codex, read the installed `AGENTS.md` notes and use the `knowledge-graph` MCP server from `.mcp.json`.
+2. For Codex CLI, read the installed `AGENTS.md` notes and confirm `codex mcp list` shows `knowledge-graph`; other MCP clients can use the server entry in `.mcp.json`.
 3. Run `/knowledge-graph init` in Claude Code, or use MCP tools such as `kg_status`, `kg_query`, and `kg_read_node` from Codex.
 
 From that point on: silent tracking in Claude Code, distributed knowledge nodes per module, and cross-session memory readable by Codex or any MCP-aware agent.
@@ -159,7 +159,7 @@ Each module directory gets a compact canonical `CLAUDE.md` node (≤20 lines, ma
 
 Plus **Resources**: every canonical `CLAUDE.md` / `SKILL.md` is exposed through `kg://node/<path>`, `kg://claude/<path>`, or `kg://skill/<path>`. The knowledge index is at `kg://index`; the work snapshot at `kg://snapshot`.
 
-Auto-registered in `.mcp.json` during installation.
+Auto-registered in `.mcp.json` during installation. When `codex` is available on `PATH`, the installer also runs `codex mcp add knowledge-graph` so Codex CLI loads the server from its active MCP registry.
 
 ---
 

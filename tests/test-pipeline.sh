@@ -323,10 +323,40 @@ assert_eq "kg_read_node reads canonical CLAUDE.md" "true" \
 assert_eq "kg_read_node ignores adapter AGENTS.md" "true" \
   "$(echo "$MCP7" | grep -q 'Adapter-only rule' && echo false || echo true)"
 
-# ── Test 8: standalone/source script parity ──────────────────────────────────
-echo ""
-echo "Test 8: standalone/source script parity"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ── Test 15: installer registers Codex CLI MCP server when available ─────────
+echo ""
+echo "Test 15: installer registers Codex CLI MCP server"
+TMPDIR8=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8"' EXIT
+TARGET8="$TMPDIR8/project"
+FAKEBIN8="$TMPDIR8/bin"
+CODEX_LOG8="$TMPDIR8/codex.log"
+mkdir -p "$TARGET8" "$FAKEBIN8"
+cat > "$FAKEBIN8/codex" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" >> "$CODEX_TEST_LOG"
+case "$*" in
+  "mcp get knowledge-graph") exit 1 ;;
+  "mcp remove knowledge-graph") exit 0 ;;
+  mcp\ add\ knowledge-graph*) exit 0 ;;
+  mcp*) exit 0 ;;
+esac
+exit 0
+SH
+chmod +x "$FAKEBIN8/codex"
+CODEX_TEST_LOG="$CODEX_LOG8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8" >/dev/null 2>&1
+assert_eq "installer calls codex mcp add" "true" \
+  "$(grep -q 'mcp add knowledge-graph' "$CODEX_LOG8" 2>/dev/null && echo true || echo false)"
+assert_eq "codex mcp add includes KG_PROJECT_DIR" "true" \
+  "$(grep -q "KG_PROJECT_DIR=$TARGET8" "$CODEX_LOG8" 2>/dev/null && echo true || echo false)"
+assert_eq "codex mcp add uses installed mcp-server.sh" "true" \
+  "$(grep -q "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" "$CODEX_LOG8" 2>/dev/null && echo true || echo false)"
+
+# ── Test 16: standalone/source script parity ─────────────────────────────────
+echo ""
+echo "Test 16: standalone/source script parity"
 for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
   assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
 done

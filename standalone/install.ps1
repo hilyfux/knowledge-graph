@@ -253,6 +253,7 @@ $agentsBegin
 ## Knowledge Graph
 
 - Use the bundled MCP server in .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- For Codex CLI, verify the server is loaded with ``codex mcp list``; the installer attempts ``codex mcp add knowledge-graph`` when ``codex`` is available.
 - Durable module knowledge lives in canonical CLAUDE.md and SKILL.md files. AGENTS.md is only the Codex adapter that tells Codex to read those canonical nodes through MCP.
 - Runtime data lives under .knowledge-graph/ and should stay uncommitted.
 - If running scripts outside Claude Code, set KG_PROJECT_DIR to this project root; Claude Code may set CLAUDE_PROJECT_DIR instead.
@@ -319,6 +320,36 @@ if (Test-Path $mcpJson) {
     Info 'Created .mcp.json and registered knowledge-graph MCP server'
 }
 
+# ── Register Codex CLI MCP server when available ────────────────────────────
+# Codex CLI currently loads MCP servers from its active session/user config; it
+# does not reliably auto-load project .mcp.json. Keep .mcp.json for generic MCP
+# clients, and also register the same stdio server with Codex when possible.
+$codex = Get-Command codex -ErrorAction SilentlyContinue
+if ($codex) {
+    $codexCanAdd = $true
+    & codex mcp get knowledge-graph *> $null
+    if ($LASTEXITCODE -eq 0) {
+        & codex mcp remove knowledge-graph *> $null
+        if ($LASTEXITCODE -eq 0) {
+            Info 'Removed old Codex CLI knowledge-graph MCP server'
+        } else {
+            $codexCanAdd = $false
+            Warn 'Codex CLI already has a knowledge-graph MCP server, but it could not be updated. Check: codex mcp list'
+        }
+    }
+
+    if ($codexCanAdd) {
+        & codex mcp add knowledge-graph --env "KG_PROJECT_DIR=$TargetPath" -- bash $mcpServerPath *> $null
+        if ($LASTEXITCODE -eq 0) {
+            Info 'Registered knowledge-graph MCP server in Codex CLI'
+        } else {
+            Warn "Codex CLI MCP registration failed. You can run manually: codex mcp add knowledge-graph --env KG_PROJECT_DIR=`"$TargetPath`" -- bash `"$mcpServerPath`""
+        }
+    }
+} else {
+    Warn 'Codex CLI not found; .mcp.json was written and Codex users can run codex mcp add later.'
+}
+
 # ── Update .gitignore ────────────────────────────────────────────────────────
 $gitignore = Join-Path $TargetPath '.gitignore'
 if (Test-Path $gitignore) {
@@ -340,6 +371,6 @@ Write-Host "  Installed to: $SkillDst"
 Write-Host ''
 Write-Host '  Next steps:'
 Write-Host '  1. Restart Claude Code (so hooks activate)'
-Write-Host '  2. In Codex/MCP clients, read AGENTS.md and connect the knowledge-graph server from .mcp.json'
+Write-Host '  2. In Codex CLI, run codex mcp list and confirm knowledge-graph is loaded; other MCP clients can use .mcp.json'
 Write-Host '  3. Run /knowledge-graph init to bootstrap'
 Write-Host ''
