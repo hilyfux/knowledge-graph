@@ -39,6 +39,12 @@ failure signals instead of silent no-response behavior.
 not an object, lacks a string `name`, or provides non-object `arguments`. This
 prevents malformed client calls from crashing the stdio server.
 
+### Fixed — MCP validates resources/read params before dispatch
+
+`resources/read` now returns `-32602` invalid-params errors when `params` is
+missing, not an object, or `uri` is not a non-empty string. This prevents
+malformed MCP resource reads from crashing the stdio server.
+
 ### Fixed — Codex MCP registration is project-level only
 
 The installer no longer calls `codex mcp add` or writes user-level Codex config.

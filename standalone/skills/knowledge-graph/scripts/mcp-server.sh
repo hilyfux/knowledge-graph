@@ -419,6 +419,10 @@ while IFS= read -r line; do
       handle_resources_list "$id"
       ;;
     resources/read)
+      if ! echo "$line" | jq -e '(.params | type == "object") and (.params.uri | type == "string" and length > 0)' >/dev/null 2>&1; then
+        send_error "$id" -32602 "Invalid params: resources/read requires object params with string uri"
+        continue
+      fi
       uri=$(echo "$line" | jq -r '.params.uri // ""')
       handle_resources_read "$id" "$uri"
       ;;
