@@ -141,9 +141,15 @@ has_knowledge_node() {
 }
 
 find_knowledge_nodes() {
-  find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-    -not -path "*/.git/*" -not -path "*/node_modules/*" \
-    -not -path "*/.knowledge-graph/*" 2>/dev/null
+  find "$CLAUDE_PROJECT_DIR" \
+    \( -type d \( \
+      -name ".git" -o -name ".hg" -o -name ".svn" -o \
+      -name ".claude" -o -name ".knowledge-graph" -o \
+      -name ".worktrees" -o -name ".cache" -o -name ".next" -o \
+      -name "node_modules" -o -name "vendor" -o \
+      -name "dist" -o -name "build" -o -name "coverage" \
+    \) -prune \) -o \
+    \( -type f \( -name "CLAUDE.md" -o -name "SKILL.md" \) -print \) 2>/dev/null
 }
 
 # ── Shared: extract prohibitions from a knowledge node ───────────────────────

@@ -14,6 +14,13 @@ querying canonical `CLAUDE.md` / `SKILL.md` nodes. This keeps Codex/MCP results
 focused on durable project knowledge and avoids wasting time on runtime copies
 or generated files.
 
+### Changed — Shared knowledge-node scans skip runtime and generated directories
+
+`guard.sh` now uses the same pruning rules as the MCP server for shared
+knowledge-node scans. Claude hook paths such as decay checks and index builds no
+longer traverse `.claude`, `.worktrees`, dependency directories, build outputs,
+or common caches.
+
 ### Changed — Predict inference uses fewer subprocesses
 
 `infer.sh predict` now parses recent event lines with a single raw-input jq pass

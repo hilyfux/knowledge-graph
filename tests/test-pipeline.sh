@@ -347,6 +347,7 @@ printf '# dependency node\n' > "$TMPDIR8/node_modules/pkg/CLAUDE.md"
 printf '# build node\n' > "$TMPDIR8/dist/CLAUDE.md"
 printf '# worktree node\n' > "$TMPDIR8/.worktrees/feature/CLAUDE.md"
 MCP15=$(printf '{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+GUARD15=$(bash -c 'source "$1/guard.sh"; find_knowledge_nodes' _ "$SCRIPT_DIR" 2>/dev/null || true)
 assert_eq "resources/list includes root node" "true" \
   "$(echo "$MCP15" | grep -q 'CLAUDE.md' && echo true || echo false)"
 assert_eq "resources/list includes source module" "true" \
@@ -359,6 +360,16 @@ assert_eq "resources/list excludes build output" "true" \
   "$(echo "$MCP15" | grep -q 'dist/CLAUDE.md' && echo false || echo true)"
 assert_eq "resources/list excludes worktrees" "true" \
   "$(echo "$MCP15" | grep -q '.worktrees/feature/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared scan includes source module" "true" \
+  "$(echo "$GUARD15" | grep -q 'src/real/CLAUDE.md' && echo true || echo false)"
+assert_eq "shared scan excludes .claude runtime copy" "true" \
+  "$(echo "$GUARD15" | grep -q '.claude/skills/knowledge-graph/SKILL.md' && echo false || echo true)"
+assert_eq "shared scan excludes node_modules" "true" \
+  "$(echo "$GUARD15" | grep -q 'node_modules/pkg/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared scan excludes build output" "true" \
+  "$(echo "$GUARD15" | grep -q 'dist/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared scan excludes worktrees" "true" \
+  "$(echo "$GUARD15" | grep -q '.worktrees/feature/CLAUDE.md' && echo false || echo true)"
 
 # ── Test 16: MCP preserves string JSON-RPC ids ───────────────────────────────
 echo ""
