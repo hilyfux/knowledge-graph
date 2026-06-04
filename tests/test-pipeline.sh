@@ -510,6 +510,27 @@ assert_eq "project .mcp.json has startup timeout" "true" \
   "$(jq -e '.mcpServers["knowledge-graph"].startup_timeout_sec == 60' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "project .mcp.json points at installed server" "true" \
   "$(jq -e --arg p "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.mcpServers["knowledge-graph"].args == [$p]' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "project .codex config has managed MCP block" "true" \
+  "$(grep -qF '# knowledge-graph:codex-mcp begin' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config has startup timeout" "true" \
+  "$(grep -qF 'startup_timeout_sec = 60' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config points at installed server" "true" \
+  "$(grep -qF "args = [\"$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh\"]" "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config sets KG_PROJECT_DIR" "true" \
+  "$(grep -qF "KG_PROJECT_DIR = \"$TARGET8\"" "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "gitignore excludes generated project codex config" "true" \
+  "$(grep -qxF '.codex/config.toml' "$TARGET8/.gitignore" 2>/dev/null && echo true || echo false)"
+TARGET8_CODEX_EXISTING="$TMPDIR10/project-codex-existing"
+mkdir -p "$TARGET8_CODEX_EXISTING/.codex"
+printf 'model = "gpt-5.4"\n' > "$TARGET8_CODEX_EXISTING/.codex/config.toml"
+HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_CODEX_EXISTING" >/dev/null 2>&1
+assert_eq "installer preserves existing project codex config" "true" \
+  "$(grep -qF 'model = "gpt-5.4"' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+CODEX_MCP_STARTUP_TIMEOUT_SEC=75 HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_CODEX_EXISTING" >/dev/null 2>&1
+assert_eq "installer replaces managed project codex block" "1" \
+  "$(grep -cF '# knowledge-graph:codex-mcp begin' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null || echo 0)"
+assert_eq "installer updates project codex startup timeout" "true" \
+  "$(grep -qF 'startup_timeout_sec = 75' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
 TARGET8_EXISTING="$TMPDIR10/project-existing"
 mkdir -p "$TARGET8_EXISTING"
 printf '{"mcpServers": null, "preserve": "yes"}\n' > "$TARGET8_EXISTING/.mcp.json"

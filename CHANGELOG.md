@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed — Codex MCP timeout is written to project config.toml
+
+`standalone/install.sh` now writes a managed Knowledge Graph MCP block to
+project `.codex/config.toml` as well as `.mcp.json`. This matches Codex CLI's
+project-scoped MCP config surface, keeps `startup_timeout_sec = 60`, preserves
+existing project config, replaces the managed block on reinstall, and still
+never writes user-level Codex config.
+
 ### Fixed — Installer validates existing project MCP JSON before writing
 
 `standalone/install.sh` now checks an existing project `.mcp.json` before any
@@ -94,7 +102,7 @@ treated as unknown methods.
 ### Fixed — Codex MCP registration is project-level only
 
 The installer no longer calls `codex mcp add` or writes user-level Codex config.
-It only updates project `.mcp.json`, keeps `KG_PROJECT_DIR` current, and sets
+It only updates project-level config, keeps `KG_PROJECT_DIR` current, and sets
 `startup_timeout_sec = 60` by default. The timeout can be overridden with
 `CODEX_MCP_STARTUP_TIMEOUT_SEC`.
 

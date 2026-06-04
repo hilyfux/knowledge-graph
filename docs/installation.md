@@ -6,7 +6,7 @@ Knowledge Graph is designed to be easy to adopt in Claude Code, while exposing t
 
 - `bash` (macOS/Linux: native; Windows: Git Bash or WSL)
 - `jq`
-- Project directory where the installer can write `.claude/`, `.mcp.json`, `AGENTS.md`, and `.knowledge-graph/`
+- Project directory where the installer can write `.claude/`, `.codex/config.toml`, `.mcp.json`, `AGENTS.md`, and `.knowledge-graph/`
 
 Install `jq` if needed:
 
@@ -55,11 +55,11 @@ cd knowledge-graph
 .\standalone\install.ps1 C:\path\to\project
 ```
 
-The PowerShell installer mirrors the bash one: copies the skill to
-`.claude\skills\knowledge-graph\`, merges hooks into `.claude\settings.json`,
-registers the MCP server in project `.mcp.json`, writes Codex notes to
-`AGENTS.md`, and adds
-`.knowledge-graph/` to `.gitignore`. Runtime still uses the `.sh`
+The PowerShell installer mirrors the project-level registration path: it copies
+the skill to `.claude\skills\knowledge-graph\`, merges hooks into
+`.claude\settings.json`, registers the MCP server in project
+`.codex/config.toml` and `.mcp.json`, writes Codex notes to `AGENTS.md`, and
+adds Knowledge Graph local paths to `.gitignore`. Runtime still uses the `.sh`
 scripts, so bash must be on your PATH.
 
 > If you see `bash not found` or `jq not found` from `install.ps1`, install the
@@ -89,19 +89,21 @@ And creates the local event log:
 For Codex and other MCP clients it also updates:
 
 ```text
+.codex/config.toml
 .mcp.json
 AGENTS.md
 ```
 
-The installer registers the server only in project `.mcp.json` and writes
-`startup_timeout_sec = 60` there by default. It never creates user-level Codex
-MCP registrations; set `CODEX_MCP_STARTUP_TIMEOUT_SEC` before install to use a
+The installer registers the server in project `.codex/config.toml` for Codex CLI
+and project `.mcp.json` for other MCP clients. Both get
+`startup_timeout_sec = 60` by default. It never creates user-level Codex MCP
+registrations; set `CODEX_MCP_STARTUP_TIMEOUT_SEC` before install to use a
 different project-level timeout.
 
 ## After install
 
 1. Restart Claude Code so hooks reload, if you use Claude Code.
-2. In Codex CLI or another MCP-aware client, use the project `.mcp.json` server entry. Codex reads canonical module `CLAUDE.md` through MCP instead of maintaining duplicate module `AGENTS.md` files.
+2. In Codex CLI, use the project `.codex/config.toml` server entry. Other MCP-aware clients can use project `.mcp.json`. Codex reads canonical module `CLAUDE.md` through MCP instead of maintaining duplicate module `AGENTS.md` files.
 3. Run `/knowledge-graph init` in Claude Code, or start with `kg_status` / `kg_query` / `kg_read_node` in Codex.
 
 ## Reinstalling

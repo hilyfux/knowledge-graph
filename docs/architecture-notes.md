@@ -193,6 +193,7 @@ your-project/
 │   ├── rules/                         <- Cross-module rules
 │   └── skills/knowledge-graph/        <- Scripts only
 ├── .mcp.json                          <- MCP server registered
+├── .codex/config.toml                 <- Codex project MCP registration
 ├── src/
 │   ├── auth/CLAUDE.md                 <- Claude module knowledge (committed)
 │   ├── api/CLAUDE.md

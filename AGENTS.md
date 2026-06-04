@@ -14,11 +14,10 @@ This repository builds Knowledge Graph, a bash + jq memory layer for AI coding a
 <!-- knowledge-graph:codex begin -->
 ## Knowledge Graph
 
-- Use the bundled project-level MCP server in .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
-- Do not install Knowledge Graph as a user-level Codex MCP server; this project is registered only through project .mcp.json.
+- Use the bundled project-level MCP server from `.codex/config.toml` or `.mcp.json` when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- Do not install Knowledge Graph as a user-level Codex MCP server; this project is registered only through project-level config.
 - Durable module knowledge lives in canonical CLAUDE.md and SKILL.md files. AGENTS.md is only the Codex adapter that tells Codex to read those canonical nodes through MCP.
 - Runtime data lives under .knowledge-graph/ and should stay uncommitted.
 - If running scripts outside Claude Code, set KG_PROJECT_DIR to this project root; Claude Code may set CLAUDE_PROJECT_DIR instead.
 - Before reporting success, include concrete evidence: tests run, files checked, or MCP resources consulted.
 <!-- knowledge-graph:codex end -->
-

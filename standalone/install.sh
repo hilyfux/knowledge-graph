@@ -22,6 +22,10 @@ fi
 [ ! -d "$TARGET" ]      && error "目标目录不存在：$TARGET"
 
 MCP_JSON="$TARGET/.mcp.json"
+CODEX_CONFIG_DIR="$TARGET/.codex"
+CODEX_CONFIG="$CODEX_CONFIG_DIR/config.toml"
+CODEX_MCP_BEGIN="# knowledge-graph:codex-mcp begin"
+CODEX_MCP_END="# knowledge-graph:codex-mcp end"
 
 validate_mcp_json() {
   local mcp_json="$1"
@@ -32,6 +36,66 @@ validate_mcp_json() {
 }
 
 validate_mcp_json "$MCP_JSON"
+
+toml_string() {
+  jq -nr --arg v "$1" '$v|@json'
+}
+
+write_codex_project_config() {
+  local mcp_cmd_toml mcp_server_toml project_toml block has_begin has_end
+  mkdir -p "$CODEX_CONFIG_DIR"
+  mcp_cmd_toml=$(toml_string "$MCP_CMD")
+  mcp_server_toml=$(toml_string "$SKILL_DST/scripts/mcp-server.sh")
+  project_toml=$(toml_string "$TARGET")
+  block=$(cat <<EOF
+$CODEX_MCP_BEGIN
+# Managed by Knowledge Graph installer. Project-level only; no user config writes.
+[mcp_servers.knowledge-graph]
+command = $mcp_cmd_toml
+args = [$mcp_server_toml]
+startup_timeout_sec = $CODEX_MCP_STARTUP_TIMEOUT_SEC
+
+[mcp_servers.knowledge-graph.env]
+KG_PROJECT_DIR = $project_toml
+$CODEX_MCP_END
+EOF
+)
+  if [ -f "$CODEX_CONFIG" ]; then
+    has_begin=false
+    has_end=false
+    grep -qF "$CODEX_MCP_BEGIN" "$CODEX_CONFIG" && has_begin=true
+    grep -qF "$CODEX_MCP_END" "$CODEX_CONFIG" && has_end=true
+    if [ "$has_begin" != "$has_end" ]; then
+      error ".codex/config.toml 中 Knowledge Graph 托管块不完整：$CODEX_CONFIG"
+    fi
+    if [ "$has_begin" = false ] && grep -Eq '^\[mcp_servers\.knowledge-graph(\.|])' "$CODEX_CONFIG"; then
+      error ".codex/config.toml 已存在非托管 knowledge-graph MCP 配置，请删除该表后重装：$CODEX_CONFIG"
+    fi
+    python3 - "$CODEX_CONFIG" "$CODEX_MCP_BEGIN" "$CODEX_MCP_END" "$block" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+begin, end, block = sys.argv[2], sys.argv[3], sys.argv[4].strip()
+text = path.read_text()
+if begin in text and end in text:
+    before = text.split(begin, 1)[0].rstrip()
+    after = text.split(end, 1)[1].lstrip()
+    parts = []
+    if before:
+        parts.append(before)
+    parts.append(block)
+    if after:
+        parts.append(after.rstrip())
+    text = "\n\n".join(parts) + "\n"
+else:
+    text = (text.rstrip() + "\n\n" if text.strip() else "") + block + "\n"
+path.write_text(text)
+PY
+  else
+    printf '%s\n' "$block" > "$CODEX_CONFIG"
+  fi
+  info "已更新项目 .codex/config.toml 中的 knowledge-graph MCP server"
+}
 
 INSTALL_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_SRC="$INSTALL_DIR/skills/knowledge-graph"
@@ -311,8 +375,8 @@ AGENTS_BLOCK=$(cat <<EOF
 $KG_AGENTS_BEGIN
 ## Knowledge Graph
 
-- Use the bundled project-level MCP server in .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
-- Do not install Knowledge Graph as a user-level Codex MCP server; this project is registered only through project .mcp.json.
+- Use the bundled project-level MCP server from .codex/config.toml or .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- Do not install Knowledge Graph as a user-level Codex MCP server; this project is registered only through project-level config.
 - Durable module knowledge lives in canonical CLAUDE.md and SKILL.md files. AGENTS.md is only the Codex adapter that tells Codex to read those canonical nodes through MCP.
 - Runtime data lives under .knowledge-graph/ and should stay uncommitted.
 - If running scripts outside Claude Code, set KG_PROJECT_DIR to this project root; Claude Code may set CLAUDE_PROJECT_DIR instead.
@@ -374,15 +438,17 @@ else
     '{"mcpServers": {"knowledge-graph": {"type": "stdio", "command": $cmd, "args": $args, "env": $env, "startup_timeout_sec": $startup_timeout_sec}}}' > "$MCP_JSON"
   info "已创建 .mcp.json 并注册 knowledge-graph MCP server"
 fi
+write_codex_project_config
 info "保持项目级安装：未写入用户级 Codex MCP 配置"
 
 # ── Update .gitignore ──────────────────────────────────────────────────────────
 GITIGNORE="$TARGET/.gitignore"
 if [ -f "$GITIGNORE" ]; then
   grep -q '^\.knowledge-graph/' "$GITIGNORE" || echo '.knowledge-graph/' >> "$GITIGNORE"
+  grep -q '^\.codex/config\.toml$' "$GITIGNORE" || echo '.codex/config.toml' >> "$GITIGNORE"
   info "已更新 .gitignore"
 else
-  echo '.knowledge-graph/' > "$GITIGNORE"
+  printf '.knowledge-graph/\n.codex/config.toml\n' > "$GITIGNORE"
   info "已创建 .gitignore"
 fi
 
@@ -396,7 +462,7 @@ echo "  宿主状态元数据: $KG_VERSION_STATUS"
 echo ""
 echo "  下一步："
 echo "  1. 重启 Claude Code session（让 hooks 生效）"
-echo "  2. Codex CLI 或其他 MCP 客户端读取项目 .mcp.json（不做用户级安装）"
+echo "  2. Codex CLI 读取项目 .codex/config.toml；其他 MCP 客户端可读取项目 .mcp.json（不做用户级安装）"
 echo "  3. 运行 /knowledge-graph init 初始化知识图谱"
 echo "  4. 运行 ! $KG_STATUS_CMD 检查版本一致性"
 echo ""
