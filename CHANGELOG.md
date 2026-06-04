@@ -45,6 +45,12 @@ prevents malformed client calls from crashing the stdio server.
 missing, not an object, or `uri` is not a non-empty string. This prevents
 malformed MCP resource reads from crashing the stdio server.
 
+### Fixed — MCP resource reads are confined to the project root
+
+`kg_read_node` and `resources/read` now reject path traversal in module paths
+and resource URIs. MCP clients cannot use `..` segments to read adjacent
+projects or parent-directory `CLAUDE.md` / `SKILL.md` files.
+
 ### Fixed — Codex MCP registration is project-level only
 
 The installer no longer calls `codex mcp add` or writes user-level Codex config.

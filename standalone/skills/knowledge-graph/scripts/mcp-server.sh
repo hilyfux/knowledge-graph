@@ -40,11 +40,33 @@ knowledge_node_path() {
   if [ "$module_path" = "." ] || [ "$module_path" = "" ] || [ "$module_path" = "root" ]; then
     base="$PROJECT_DIR"
   else
+    is_safe_rel_path "$module_path" || return 1
     base="$PROJECT_DIR/$module_path"
   fi
   [ -f "$base/CLAUDE.md" ] && { printf '%s\n' "$base/CLAUDE.md"; return 0; }
   [ -f "$base/SKILL.md" ] && { printf '%s\n' "$base/SKILL.md"; return 0; }
   return 1
+}
+
+is_safe_rel_path() {
+  local rel="$1" part
+  [ -n "$rel" ] || return 1
+  if [ "$rel" = "." ] || [ "$rel" = "root" ]; then
+    return 0
+  fi
+  case "$rel" in
+    /*) return 1 ;;
+  esac
+  local old_ifs="$IFS"
+  IFS='/'
+  for part in $rel; do
+    if [ "$part" = ".." ]; then
+      IFS="$old_ifs"
+      return 1
+    fi
+  done
+  IFS="$old_ifs"
+  return 0
 }
 
 find_knowledge_nodes() {
@@ -91,12 +113,13 @@ err_not_initialized(){ send_error "$1" -32103 "Knowledge graph not initialized. 
 # kg://index             → .knowledge-graph/knowledge-index.md
 # kg://snapshot          → .knowledge-graph/work-snapshot.md
 uri_to_path() {
+  local rel
   case "$1" in
     kg://node/root)    knowledge_node_path "root" || true ;;
-    kg://node/*)       knowledge_node_path "${1#kg://node/}" || true ;;
+    kg://node/*)       rel="${1#kg://node/}"; is_safe_rel_path "$rel" && knowledge_node_path "$rel" || true ;;
     kg://claude/root)  echo "$PROJECT_DIR/CLAUDE.md" ;;
-    kg://claude/*)     echo "$PROJECT_DIR/${1#kg://claude/}/CLAUDE.md" ;;
-    kg://skill/*)      echo "$PROJECT_DIR/${1#kg://skill/}/SKILL.md" ;;
+    kg://claude/*)     rel="${1#kg://claude/}"; if is_safe_rel_path "$rel"; then echo "$PROJECT_DIR/$rel/CLAUDE.md"; fi ;;
+    kg://skill/*)      rel="${1#kg://skill/}"; if is_safe_rel_path "$rel"; then echo "$PROJECT_DIR/$rel/SKILL.md"; fi ;;
     kg://index)        echo "$INDEX" ;;
     kg://snapshot)     echo "$SNAPSHOT" ;;
     *)                 echo "" ;;
@@ -294,6 +317,10 @@ tool_kg_read_node() {
   local module_path
   module_path=$(echo "$args" | jq -r '.module_path // ""')
   if [ -z "$module_path" ]; then err_empty_arg "$id" "module_path"; return; fi
+  if ! is_safe_rel_path "$module_path"; then
+    send_error "$id" -32602 "Invalid module_path: path must stay within project root"
+    return
+  fi
 
   local path="" which=""
   path=$(knowledge_node_path "$module_path" 2>/dev/null || true)

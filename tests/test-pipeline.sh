@@ -403,17 +403,38 @@ assert_eq "resources/read missing params returns invalid params" "true" \
 assert_eq "resources/read non-string uri returns invalid params" "true" \
   "$(echo "$MCP19_BAD_URI" | jq -e '.jsonrpc == "2.0" and .id == 22 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-# ── Test 20: installer stays project-level only for Codex/MCP ────────────────
+# ── Test 20: MCP confines resource paths to project root ─────────────────────
 echo ""
-echo "Test 20: installer stays project-level only for Codex/MCP"
+echo "Test 20: MCP confines resource paths to project root"
 TMPDIR9=$(mktemp -d)
 trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9"' EXIT
-TARGET8="$TMPDIR9/project"
-HOME8="$TMPDIR9/home"
-FAKEBIN8="$TMPDIR9/bin"
-CODEX_LOG8="$TMPDIR9/codex.log"
+PROJECT9="$TMPDIR9/project"
+OUTSIDE9="$TMPDIR9/outside"
+export CLAUDE_PROJECT_DIR="$PROJECT9"
+mkdir -p "$PROJECT9/.knowledge-graph" "$PROJECT9/src" "$OUTSIDE9"
+printf '# project root\n' > "$PROJECT9/CLAUDE.md"
+printf '# source node\n' > "$PROJECT9/src/CLAUDE.md"
+printf '# outside leak\n' > "$OUTSIDE9/CLAUDE.md"
+MCP20_TOOL=$(printf '{"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"kg_read_node","arguments":{"module_path":"../outside"}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP20_RESOURCE=$(printf '{"jsonrpc":"2.0","id":24,"method":"resources/read","params":{"uri":"kg://claude/../outside"}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "kg_read_node rejects path traversal" "true" \
+  "$(echo "$MCP20_TOOL" | jq -e '.jsonrpc == "2.0" and .id == 23 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "resources/read rejects path traversal" "true" \
+  "$(echo "$MCP20_RESOURCE" | jq -e '.jsonrpc == "2.0" and .id == 24 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "path traversal does not leak outside node content" "true" \
+  "$(printf '%s\n%s\n' "$MCP20_TOOL" "$MCP20_RESOURCE" | grep -q 'outside leak' && echo false || echo true)"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ── Test 21: installer stays project-level only for Codex/MCP ────────────────
+echo ""
+echo "Test 21: installer stays project-level only for Codex/MCP"
+TMPDIR10=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9" "$TMPDIR10"' EXIT
+TARGET8="$TMPDIR10/project"
+HOME8="$TMPDIR10/home"
+FAKEBIN8="$TMPDIR10/bin"
+CODEX_LOG8="$TMPDIR10/codex.log"
 CODEX_CONFIG8="$HOME8/.codex/config.toml"
 mkdir -p "$TARGET8" "$FAKEBIN8" "$(dirname "$CODEX_CONFIG8")"
 cat > "$CODEX_CONFIG8" <<EOF
@@ -451,9 +472,9 @@ HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standal
 assert_eq "installer rejects HOME as target" "true" \
   "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
 
-# ── Test 21: standalone/source script parity ─────────────────────────────────
+# ── Test 22: standalone/source script parity ─────────────────────────────────
 echo ""
-echo "Test 21: standalone/source script parity"
+echo "Test 22: standalone/source script parity"
 for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
   assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
 done
