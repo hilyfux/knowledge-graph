@@ -21,6 +21,12 @@ stringifying them into bare tokens. MCP clients that send string ids now receive
 valid JSON responses with the same id, improving compatibility across Codex and
 other MCP clients.
 
+### Fixed — MCP returns standard errors for invalid JSON-RPC input
+
+Malformed JSON now returns `-32700` parse errors, and valid non-object JSON now
+returns `-32600` invalid-request errors. This gives MCP clients explicit
+failure signals instead of silent no-response behavior.
+
 ### Fixed — Codex MCP registration is project-level only
 
 The installer no longer calls `codex mcp add` or writes user-level Codex config.

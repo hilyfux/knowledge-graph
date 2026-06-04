@@ -385,6 +385,15 @@ handle_tool_call() {
 while IFS= read -r line; do
   [ -z "$line" ] && continue
 
+  if ! echo "$line" | jq -e . >/dev/null 2>&1; then
+    send_error "null" -32700 "Parse error"
+    continue
+  fi
+  if ! echo "$line" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    send_error "null" -32600 "Invalid Request"
+    continue
+  fi
+
   method=$(echo "$line" | jq -r '.method // ""' 2>/dev/null || echo "")
   id=$(echo "$line" | jq -c 'if has("id") then .id else null end' 2>/dev/null || echo "null")
 

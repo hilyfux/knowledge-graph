@@ -370,11 +370,21 @@ assert_eq "tool call with string id returns valid JSON" "true" \
 assert_eq "tool call preserves string id" "true" \
   "$(echo "$MCP16_TOOL" | jq -e '.id == "req-status"' >/dev/null 2>&1 && echo true || echo false)"
 
+# ── Test 17: MCP returns JSON-RPC errors for invalid input ───────────────────
+echo ""
+echo "Test 17: MCP returns JSON-RPC errors for invalid input"
+MCP17_PARSE=$(printf 'not-json\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_INVALID=$(printf '[1,2,3]\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "malformed JSON returns parse error" "true" \
+  "$(echo "$MCP17_PARSE" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32700' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "non-object JSON returns invalid request" "true" \
+  "$(echo "$MCP17_INVALID" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# ── Test 17: installer stays project-level only for Codex/MCP ────────────────
+# ── Test 18: installer stays project-level only for Codex/MCP ────────────────
 echo ""
-echo "Test 17: installer stays project-level only for Codex/MCP"
+echo "Test 18: installer stays project-level only for Codex/MCP"
 TMPDIR9=$(mktemp -d)
 trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9"' EXIT
 TARGET8="$TMPDIR9/project"
@@ -418,9 +428,9 @@ HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standal
 assert_eq "installer rejects HOME as target" "true" \
   "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
 
-# ── Test 18: standalone/source script parity ─────────────────────────────────
+# ── Test 19: standalone/source script parity ─────────────────────────────────
 echo ""
-echo "Test 18: standalone/source script parity"
+echo "Test 19: standalone/source script parity"
 for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
   assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
 done
