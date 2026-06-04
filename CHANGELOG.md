@@ -20,6 +20,13 @@ or generated files.
 instead of `jq | jq`, preserving corrupt-line tolerance while reducing hook
 latency for Codex/Claude prediction calls.
 
+### Changed — Predict performance checks avoid timer overhead
+
+`infer.sh predict` now derives the target directory without `sed` or `xargs`,
+and the pipeline uses lightweight millisecond timing before falling back to
+Python. This keeps the performance gate focused on inference work instead of
+test harness startup overhead.
+
 ### Fixed — MCP JSON-RPC responses preserve string ids
 
 `mcp-server.sh` now keeps JSON-RPC request ids as JSON values instead of
@@ -56,6 +63,13 @@ projects or parent-directory `CLAUDE.md` / `SKILL.md` files.
 Known JSON-RPC methods without an `id` are now treated as notifications and do
 not write response objects to stdout. This avoids polluting MCP stdio streams
 when clients send fire-and-forget protocol messages.
+
+### Fixed — MCP validates JSON-RPC request envelopes
+
+Requests must now declare `jsonrpc: "2.0"` and a non-empty string `method`.
+Empty objects, missing methods, non-string methods, and wrong JSON-RPC versions
+return `-32600` invalid-request errors instead of being ignored, misrouted, or
+treated as unknown methods.
 
 ### Fixed — Codex MCP registration is project-level only
 

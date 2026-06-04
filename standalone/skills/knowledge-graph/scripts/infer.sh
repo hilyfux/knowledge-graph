@@ -124,8 +124,15 @@ case "$CMD" in
   predict)
     # 预测性上下文：基于当前触碰的文件，预测接下来需要哪些模块的知识
     # 输入：stdin 传入当前文件路径
-    TARGET_DIR=$(cat | jq -r '.file_path // ""' 2>/dev/null | sed "s|^$CLAUDE_PROJECT_DIR/||" | xargs dirname 2>/dev/null)
-    [ -z "$TARGET_DIR" ] && exit 0
+    TARGET_FILE=$(jq -r '.file_path // ""' 2>/dev/null)
+    [ -z "$TARGET_FILE" ] && exit 0
+    case "$TARGET_FILE" in
+      "$CLAUDE_PROJECT_DIR"/*) TARGET_FILE="${TARGET_FILE#$CLAUDE_PROJECT_DIR/}" ;;
+    esac
+    case "$TARGET_FILE" in
+      */*) TARGET_DIR="${TARGET_FILE%/*}" ;;
+      *) TARGET_DIR="." ;;
+    esac
 
     # Primary: predict from event history (recent 300 lines)
     RESULT=$(tail -300 "$EVENTS" 2>/dev/null | jq -Rsc --arg dir "$TARGET_DIR" '

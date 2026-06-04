@@ -16,9 +16,13 @@ PASS=0
 FAIL=0
 TOTAL=0
 
-# macOS date doesn't support %N; use python3 for ms-precision timestamps
+# macOS date doesn't support %N; prefer lightweight Perl for ms timestamps.
 now_ms() {
-  python3 -c 'import time; print(int(time.time()*1000))'
+  if command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=time -e 'printf "%d\n", time() * 1000'
+  else
+    python3 -c 'import time; print(int(time.time()*1000))'
+  fi
 }
 
 assert_under_ms() {
@@ -375,10 +379,22 @@ echo ""
 echo "Test 17: MCP returns JSON-RPC errors for invalid input"
 MCP17_PARSE=$(printf 'not-json\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 MCP17_INVALID=$(printf '[1,2,3]\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_EMPTY_OBJECT=$(printf '{}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_MISSING_METHOD=$(printf '{"jsonrpc":"2.0","id":50}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_BAD_METHOD=$(printf '{"jsonrpc":"2.0","id":51,"method":123}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_BAD_VERSION=$(printf '{"jsonrpc":"1.0","id":52,"method":"tools/list"}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 assert_eq "malformed JSON returns parse error" "true" \
   "$(echo "$MCP17_PARSE" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32700' >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "non-object JSON returns invalid request" "true" \
   "$(echo "$MCP17_INVALID" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "empty object returns invalid request" "true" \
+  "$(echo "$MCP17_EMPTY_OBJECT" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "missing method returns invalid request" "true" \
+  "$(echo "$MCP17_MISSING_METHOD" | jq -e '.jsonrpc == "2.0" and .id == 50 and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "non-string method returns invalid request" "true" \
+  "$(echo "$MCP17_BAD_METHOD" | jq -e '.jsonrpc == "2.0" and .id == 51 and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "wrong jsonrpc version returns invalid request" "true" \
+  "$(echo "$MCP17_BAD_VERSION" | jq -e '.jsonrpc == "2.0" and .id == 52 and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
 
 # ── Test 18: MCP does not respond to JSON-RPC notifications ──────────────────
 echo ""

@@ -421,10 +421,19 @@ while IFS= read -r line; do
     continue
   fi
 
-  rpc_meta=$(echo "$line" | jq -r '[if has("id") then "true" else "false" end, (if has("id") then (.id | tojson) else "null" end), (.method // "")] | @tsv' 2>/dev/null || printf 'false\tnull\t')
-  IFS="$(printf '\t')" read -r has_id id method <<EOF
+  rpc_meta=$(echo "$line" | jq -r '[
+    (has("id") | tostring),
+    (if has("id") then (.id | tojson) else "null" end),
+    (if (.method | type) == "string" then .method else "" end),
+    ((.jsonrpc == "2.0" and (.method | type) == "string" and (.method | length > 0)) | tostring)
+  ] | @tsv' 2>/dev/null || printf 'false\tnull\t\tfalse')
+  IFS="$(printf '\t')" read -r has_id id method valid_request <<EOF
 $rpc_meta
 EOF
+  if [ "$valid_request" != "true" ]; then
+    send_error "$id" -32600 "Invalid Request"
+    continue
+  fi
   if [ "$has_id" != "true" ] && [ -n "$method" ]; then
     continue
   fi
