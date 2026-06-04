@@ -356,11 +356,25 @@ assert_eq "resources/list excludes build output" "true" \
 assert_eq "resources/list excludes worktrees" "true" \
   "$(echo "$MCP15" | grep -q '.worktrees/feature/CLAUDE.md' && echo false || echo true)"
 
+# ── Test 16: MCP preserves string JSON-RPC ids ───────────────────────────────
+echo ""
+echo "Test 16: MCP preserves string JSON-RPC ids"
+MCP16_INIT=$(printf '{"jsonrpc":"2.0","id":"req-init","method":"initialize","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_TOOL=$(printf '{"jsonrpc":"2.0","id":"req-status","method":"tools/call","params":{"name":"kg_status","arguments":{}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "initialize with string id returns valid JSON" "true" \
+  "$(echo "$MCP16_INIT" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "initialize preserves string id" "true" \
+  "$(echo "$MCP16_INIT" | jq -e '.id == "req-init"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "tool call with string id returns valid JSON" "true" \
+  "$(echo "$MCP16_TOOL" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "tool call preserves string id" "true" \
+  "$(echo "$MCP16_TOOL" | jq -e '.id == "req-status"' >/dev/null 2>&1 && echo true || echo false)"
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# ── Test 16: installer stays project-level only for Codex/MCP ────────────────
+# ── Test 17: installer stays project-level only for Codex/MCP ────────────────
 echo ""
-echo "Test 16: installer stays project-level only for Codex/MCP"
+echo "Test 17: installer stays project-level only for Codex/MCP"
 TMPDIR9=$(mktemp -d)
 trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9"' EXIT
 TARGET8="$TMPDIR9/project"
@@ -404,9 +418,9 @@ HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standal
 assert_eq "installer rejects HOME as target" "true" \
   "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
 
-# ── Test 17: standalone/source script parity ─────────────────────────────────
+# ── Test 18: standalone/source script parity ─────────────────────────────────
 echo ""
-echo "Test 17: standalone/source script parity"
+echo "Test 18: standalone/source script parity"
 for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
   assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
 done

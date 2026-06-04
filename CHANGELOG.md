@@ -14,6 +14,13 @@ querying canonical `CLAUDE.md` / `SKILL.md` nodes. This keeps Codex/MCP results
 focused on durable project knowledge and avoids wasting time on runtime copies
 or generated files.
 
+### Fixed — MCP JSON-RPC responses preserve string ids
+
+`mcp-server.sh` now keeps JSON-RPC request ids as JSON values instead of
+stringifying them into bare tokens. MCP clients that send string ids now receive
+valid JSON responses with the same id, improving compatibility across Codex and
+other MCP clients.
+
 ### Fixed — Codex MCP registration is project-level only
 
 The installer no longer calls `codex mcp add` or writes user-level Codex config.

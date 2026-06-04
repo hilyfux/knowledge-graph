@@ -385,9 +385,8 @@ handle_tool_call() {
 while IFS= read -r line; do
   [ -z "$line" ] && continue
 
-  PARSED=$(echo "$line" | jq -r '[.method // "", (.id // "null" | tostring)] | join("\t")' 2>/dev/null)
-  method=$(printf '%s' "$PARSED" | cut -f1)
-  id=$(printf '%s' "$PARSED" | cut -f2)
+  method=$(echo "$line" | jq -r '.method // ""' 2>/dev/null || echo "")
+  id=$(echo "$line" | jq -c 'if has("id") then .id else null end' 2>/dev/null || echo "null")
 
   case "$method" in
     initialize)
