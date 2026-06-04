@@ -544,12 +544,16 @@ assert_eq "codex user config does NOT point at installed server" "true" \
   "$(grep -q "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" "$CODEX_CONFIG8" 2>/dev/null && echo false || echo true)"
 assert_eq "project .mcp.json has startup timeout" "true" \
   "$(jq -e '.mcpServers["knowledge-graph"].startup_timeout_sec == 60' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "project .mcp.json has tool timeout" "true" \
+  "$(jq -e '.mcpServers["knowledge-graph"].tool_timeout_sec == 20' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "project .mcp.json points at installed server" "true" \
   "$(jq -e --arg p "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.mcpServers["knowledge-graph"].args == [$p]' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "project .codex config has managed MCP block" "true" \
   "$(grep -qF '# knowledge-graph:codex-mcp begin' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
 assert_eq "project .codex config has startup timeout" "true" \
   "$(grep -qF 'startup_timeout_sec = 60' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config has tool timeout" "true" \
+  "$(grep -qF 'tool_timeout_sec = 20' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
 assert_eq "project .codex config points at installed server" "true" \
   "$(grep -qF "args = [\"$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh\"]" "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
 assert_eq "project .codex config sets KG_PROJECT_DIR" "true" \
@@ -562,17 +566,19 @@ printf 'model = "gpt-5.4"\n' > "$TARGET8_CODEX_EXISTING/.codex/config.toml"
 HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_CODEX_EXISTING" >/dev/null 2>&1
 assert_eq "installer preserves existing project codex config" "true" \
   "$(grep -qF 'model = "gpt-5.4"' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
-CODEX_MCP_STARTUP_TIMEOUT_SEC=75 HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_CODEX_EXISTING" >/dev/null 2>&1
+CODEX_MCP_STARTUP_TIMEOUT_SEC=75 CODEX_MCP_TOOL_TIMEOUT_SEC=35 HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_CODEX_EXISTING" >/dev/null 2>&1
 assert_eq "installer replaces managed project codex block" "1" \
   "$(grep -cF '# knowledge-graph:codex-mcp begin' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null || echo 0)"
 assert_eq "installer updates project codex startup timeout" "true" \
   "$(grep -qF 'startup_timeout_sec = 75' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "installer updates project codex tool timeout" "true" \
+  "$(grep -qF 'tool_timeout_sec = 35' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
 TARGET8_EXISTING="$TMPDIR10/project-existing"
 mkdir -p "$TARGET8_EXISTING"
 printf '{"mcpServers": null, "preserve": "yes"}\n' > "$TARGET8_EXISTING/.mcp.json"
 HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_EXISTING" >/dev/null 2>&1
 assert_eq "installer normalizes missing mcpServers object" "true" \
-  "$(jq -e --arg p "$TARGET8_EXISTING/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.preserve == "yes" and .mcpServers["knowledge-graph"].args == [$p] and .mcpServers["knowledge-graph"].startup_timeout_sec == 60' "$TARGET8_EXISTING/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+  "$(jq -e --arg p "$TARGET8_EXISTING/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.preserve == "yes" and .mcpServers["knowledge-graph"].args == [$p] and .mcpServers["knowledge-graph"].startup_timeout_sec == 60 and .mcpServers["knowledge-graph"].tool_timeout_sec == 20' "$TARGET8_EXISTING/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
 TARGET8_BAD_SHAPE="$TMPDIR10/project-bad-shape"
 mkdir -p "$TARGET8_BAD_SHAPE"
 printf '{"mcpServers":[]}\n' > "$TARGET8_BAD_SHAPE/.mcp.json"
@@ -596,6 +602,8 @@ assert_eq "PowerShell installer validates project .mcp.json shape" "true" \
   "$(rg -q 'function Read-ProjectMcpJson' "$REPO_ROOT/standalone/install.ps1" && rg -q 'mcpServers must be an object' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
 assert_eq "PowerShell installer preserves invalid .mcp.json" "true" \
   "$(rg -q 'Preserving existing .mcp.json unchanged' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
+assert_eq "PowerShell installer supports tool timeout" "true" \
+  "$(rg -q 'CODEX_MCP_TOOL_TIMEOUT_SEC' "$REPO_ROOT/standalone/install.ps1" && rg -q 'tool_timeout_sec' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
 
 # ── Test 23: standalone/source script parity ─────────────────────────────────
 echo ""

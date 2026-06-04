@@ -128,8 +128,8 @@ This is the easiest way to refresh scripts and hook wiring without manually edit
 
 - `jq` is installed and available in `PATH`
 - `.claude/settings.json` includes Knowledge Graph hooks
-- `.codex/config.toml` includes the project-level `knowledge-graph` MCP server for Codex CLI with `KG_PROJECT_DIR` and `startup_timeout_sec`
-- `.mcp.json` includes the project-level `knowledge-graph` MCP server for other MCP clients with `KG_PROJECT_DIR` and `startup_timeout_sec`
+- `.codex/config.toml` includes the project-level `knowledge-graph` MCP server for Codex CLI with `KG_PROJECT_DIR`, `startup_timeout_sec`, and `tool_timeout_sec`
+- `.mcp.json` includes the project-level `knowledge-graph` MCP server for other MCP clients with `KG_PROJECT_DIR`, `startup_timeout_sec`, and `tool_timeout_sec`
 - `AGENTS.md` includes the marked Knowledge Graph section for Codex
 - Claude Code has been restarted after install or reinstall
 - the target project is writable

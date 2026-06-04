@@ -96,9 +96,10 @@ AGENTS.md
 
 The installer registers the server in project `.codex/config.toml` for Codex CLI
 and project `.mcp.json` for other MCP clients. Both get
-`startup_timeout_sec = 60` by default. It never creates user-level Codex MCP
-registrations; set `CODEX_MCP_STARTUP_TIMEOUT_SEC` before install to use a
-different project-level timeout.
+`startup_timeout_sec = 60` and `tool_timeout_sec = 20` by default. It never
+creates user-level Codex MCP registrations; set
+`CODEX_MCP_STARTUP_TIMEOUT_SEC` or `CODEX_MCP_TOOL_TIMEOUT_SEC` before install
+to use different project-level timeouts.
 
 ## After install
 

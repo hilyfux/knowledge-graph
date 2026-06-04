@@ -351,12 +351,21 @@ Info 'Updated AGENTS.md with Codex Knowledge Graph notes'
 $mcpServerPath = ($SkillDst -replace '\\', '/') + '/scripts/mcp-server.sh'
 $mcpEnv = [PSCustomObject]@{ KG_PROJECT_DIR = $TargetPath }
 $codexMcpStartupTimeoutSec = 60
+$codexMcpToolTimeoutSec = 20
 if ($env:CODEX_MCP_STARTUP_TIMEOUT_SEC) {
     [int]$parsedTimeout = 0
     if ([int]::TryParse($env:CODEX_MCP_STARTUP_TIMEOUT_SEC, [ref]$parsedTimeout) -and $parsedTimeout -gt 0) {
         $codexMcpStartupTimeoutSec = $parsedTimeout
     } else {
         Warn 'CODEX_MCP_STARTUP_TIMEOUT_SEC is invalid; using default 60'
+    }
+}
+if ($env:CODEX_MCP_TOOL_TIMEOUT_SEC) {
+    [int]$parsedTimeout = 0
+    if ([int]::TryParse($env:CODEX_MCP_TOOL_TIMEOUT_SEC, [ref]$parsedTimeout) -and $parsedTimeout -gt 0) {
+        $codexMcpToolTimeoutSec = $parsedTimeout
+    } else {
+        Warn 'CODEX_MCP_TOOL_TIMEOUT_SEC is invalid; using default 20'
     }
 }
 
@@ -370,6 +379,7 @@ if (Test-Path $mcpJson) {
             args    = @($mcpServerPath)
             env     = $mcpEnv
             startup_timeout_sec = $codexMcpStartupTimeoutSec
+            tool_timeout_sec = $codexMcpToolTimeoutSec
         }
         $existing.mcpServers | Add-Member -NotePropertyName 'knowledge-graph' -NotePropertyValue $kgMcp -Force
         $existing | ConvertTo-Json -Depth 10 | Set-Content -Path $mcpJson -Encoding UTF8
@@ -382,6 +392,11 @@ if (Test-Path $mcpJson) {
             $existing.mcpServers.'knowledge-graph'.startup_timeout_sec = $codexMcpStartupTimeoutSec
         } else {
             $existing.mcpServers.'knowledge-graph' | Add-Member -NotePropertyName 'startup_timeout_sec' -NotePropertyValue $codexMcpStartupTimeoutSec -Force
+        }
+        if ($existing.mcpServers.'knowledge-graph'.PSObject.Properties['tool_timeout_sec']) {
+            $existing.mcpServers.'knowledge-graph'.tool_timeout_sec = $codexMcpToolTimeoutSec
+        } else {
+            $existing.mcpServers.'knowledge-graph' | Add-Member -NotePropertyName 'tool_timeout_sec' -NotePropertyValue $codexMcpToolTimeoutSec -Force
         }
         if ($existing.mcpServers.'knowledge-graph'.PSObject.Properties['env']) {
             $existing.mcpServers.'knowledge-graph'.env = $mcpEnv
@@ -400,6 +415,7 @@ if (Test-Path $mcpJson) {
                 args    = @($mcpServerPath)
                 env     = $mcpEnv
                 startup_timeout_sec = $codexMcpStartupTimeoutSec
+                tool_timeout_sec = $codexMcpToolTimeoutSec
             }
         }
     }
@@ -420,6 +436,7 @@ $codexMcpBegin
 command = $mcpCommandToml
 args = [$mcpServerToml]
 startup_timeout_sec = $codexMcpStartupTimeoutSec
+tool_timeout_sec = $codexMcpToolTimeoutSec
 
 [mcp_servers.knowledge-graph.env]
 KG_PROJECT_DIR = $projectToml

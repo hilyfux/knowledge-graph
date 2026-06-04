@@ -54,6 +54,7 @@ $CODEX_MCP_BEGIN
 command = $mcp_cmd_toml
 args = [$mcp_server_toml]
 startup_timeout_sec = $CODEX_MCP_STARTUP_TIMEOUT_SEC
+tool_timeout_sec = $CODEX_MCP_TOOL_TIMEOUT_SEC
 
 [mcp_servers.knowledge-graph.env]
 KG_PROJECT_DIR = $project_toml
@@ -416,26 +417,34 @@ case "$CODEX_MCP_STARTUP_TIMEOUT_SEC" in
     CODEX_MCP_STARTUP_TIMEOUT_SEC=60
     ;;
 esac
+CODEX_MCP_TOOL_TIMEOUT_SEC="${CODEX_MCP_TOOL_TIMEOUT_SEC:-20}"
+case "$CODEX_MCP_TOOL_TIMEOUT_SEC" in
+  ''|*[!0-9]*|0)
+    warn "CODEX_MCP_TOOL_TIMEOUT_SEC 无效，使用默认值 20"
+    CODEX_MCP_TOOL_TIMEOUT_SEC=20
+    ;;
+esac
 if [ -f "$MCP_JSON" ]; then
   if ! jq -e '.mcpServers["knowledge-graph"]' "$MCP_JSON" >/dev/null 2>&1; then
-    jq --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --argjson env "$MCP_ENV" --argjson startup_timeout_sec "$CODEX_MCP_STARTUP_TIMEOUT_SEC" \
-      '.mcpServers["knowledge-graph"] = {"type": "stdio", "command": $cmd, "args": $args, "env": $env, "startup_timeout_sec": $startup_timeout_sec}' \
+    jq --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --argjson env "$MCP_ENV" --argjson startup_timeout_sec "$CODEX_MCP_STARTUP_TIMEOUT_SEC" --argjson tool_timeout_sec "$CODEX_MCP_TOOL_TIMEOUT_SEC" \
+      '.mcpServers["knowledge-graph"] = {"type": "stdio", "command": $cmd, "args": $args, "env": $env, "startup_timeout_sec": $startup_timeout_sec, "tool_timeout_sec": $tool_timeout_sec}' \
       "$MCP_JSON" > "$MCP_JSON.tmp" && mv "$MCP_JSON.tmp" "$MCP_JSON"
     info "已在 .mcp.json 中注册 knowledge-graph MCP server"
   else
-    jq --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --arg project "$TARGET" --argjson startup_timeout_sec "$CODEX_MCP_STARTUP_TIMEOUT_SEC" \
+    jq --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --arg project "$TARGET" --argjson startup_timeout_sec "$CODEX_MCP_STARTUP_TIMEOUT_SEC" --argjson tool_timeout_sec "$CODEX_MCP_TOOL_TIMEOUT_SEC" \
       '.mcpServers["knowledge-graph"].type = "stdio" |
        .mcpServers["knowledge-graph"].command = $cmd |
        .mcpServers["knowledge-graph"].args = $args |
        .mcpServers["knowledge-graph"].startup_timeout_sec = $startup_timeout_sec |
+       .mcpServers["knowledge-graph"].tool_timeout_sec = $tool_timeout_sec |
        .mcpServers["knowledge-graph"].env = ((.mcpServers["knowledge-graph"].env // {}) + {KG_PROJECT_DIR: $project}) |
        del(.mcpServers["knowledge-graph"].env.KG_PRIMARY_NODE_FILE)' \
       "$MCP_JSON" > "$MCP_JSON.tmp" && mv "$MCP_JSON.tmp" "$MCP_JSON"
     info "已更新 .mcp.json 中的 knowledge-graph MCP server"
   fi
 else
-  jq -n --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --argjson env "$MCP_ENV" --argjson startup_timeout_sec "$CODEX_MCP_STARTUP_TIMEOUT_SEC" \
-    '{"mcpServers": {"knowledge-graph": {"type": "stdio", "command": $cmd, "args": $args, "env": $env, "startup_timeout_sec": $startup_timeout_sec}}}' > "$MCP_JSON"
+  jq -n --arg cmd "$MCP_CMD" --argjson args "$MCP_ARGS" --argjson env "$MCP_ENV" --argjson startup_timeout_sec "$CODEX_MCP_STARTUP_TIMEOUT_SEC" --argjson tool_timeout_sec "$CODEX_MCP_TOOL_TIMEOUT_SEC" \
+    '{"mcpServers": {"knowledge-graph": {"type": "stdio", "command": $cmd, "args": $args, "env": $env, "startup_timeout_sec": $startup_timeout_sec, "tool_timeout_sec": $tool_timeout_sec}}}' > "$MCP_JSON"
   info "已创建 .mcp.json 并注册 knowledge-graph MCP server"
 fi
 write_codex_project_config

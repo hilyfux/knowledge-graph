@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed — Project MCP installs set tool timeout
+
+`standalone/install.sh` and `standalone/install.ps1` now write
+`tool_timeout_sec = 20` alongside `startup_timeout_sec = 60` in project MCP
+config. Set `CODEX_MCP_TOOL_TIMEOUT_SEC` before install to override the
+project-level tool timeout without creating user-level Codex config.
+
 ### Changed — MCP query output is capped and literal
 
 `kg_query` now advertises and enforces a maximum result limit of 20, keeping

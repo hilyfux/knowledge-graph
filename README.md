@@ -163,7 +163,7 @@ The MCP server also returns concise initialization instructions so Codex starts
 with `kg_status`, queries and reads canonical nodes before unfamiliar edits, and
 uses prediction/resume tools before spending context on broad file reads.
 
-Auto-registered in project `.codex/config.toml` for Codex CLI and project `.mcp.json` for other MCP-aware clients during installation, with `startup_timeout_sec = 60` by default. The installer does not create user-level Codex MCP registrations; set `CODEX_MCP_STARTUP_TIMEOUT_SEC` before install to use a different project-level timeout.
+Auto-registered in project `.codex/config.toml` for Codex CLI and project `.mcp.json` for other MCP-aware clients during installation, with `startup_timeout_sec = 60` and `tool_timeout_sec = 20` by default. The installer does not create user-level Codex MCP registrations; set `CODEX_MCP_STARTUP_TIMEOUT_SEC` or `CODEX_MCP_TOOL_TIMEOUT_SEC` before install to use different project-level timeouts.
 
 ---
 
