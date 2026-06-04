@@ -323,17 +323,50 @@ assert_eq "kg_read_node reads canonical CLAUDE.md" "true" \
 assert_eq "kg_read_node ignores adapter AGENTS.md" "true" \
   "$(echo "$MCP7" | grep -q 'Adapter-only rule' && echo false || echo true)"
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-
-# ── Test 15: installer stays project-level only for Codex/MCP ────────────────
+# ── Test 15: MCP resource scan prunes runtime/dependency/build dirs ──────────
 echo ""
-echo "Test 15: installer stays project-level only for Codex/MCP"
+echo "Test 15: MCP resource scan prunes runtime/dependency/build dirs"
 TMPDIR8=$(mktemp -d)
 trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8"' EXIT
-TARGET8="$TMPDIR8/project"
-HOME8="$TMPDIR8/home"
-FAKEBIN8="$TMPDIR8/bin"
-CODEX_LOG8="$TMPDIR8/codex.log"
+export CLAUDE_PROJECT_DIR="$TMPDIR8"
+mkdir -p \
+  "$TMPDIR8/.knowledge-graph" \
+  "$TMPDIR8/src/real" \
+  "$TMPDIR8/.claude/skills/knowledge-graph" \
+  "$TMPDIR8/node_modules/pkg" \
+  "$TMPDIR8/dist" \
+  "$TMPDIR8/.worktrees/feature"
+printf '# root node\n' > "$TMPDIR8/CLAUDE.md"
+printf '# real module\n' > "$TMPDIR8/src/real/CLAUDE.md"
+printf '# runtime skill copy\n' > "$TMPDIR8/.claude/skills/knowledge-graph/SKILL.md"
+printf '# dependency node\n' > "$TMPDIR8/node_modules/pkg/CLAUDE.md"
+printf '# build node\n' > "$TMPDIR8/dist/CLAUDE.md"
+printf '# worktree node\n' > "$TMPDIR8/.worktrees/feature/CLAUDE.md"
+MCP15=$(printf '{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "resources/list includes root node" "true" \
+  "$(echo "$MCP15" | grep -q 'CLAUDE.md' && echo true || echo false)"
+assert_eq "resources/list includes source module" "true" \
+  "$(echo "$MCP15" | grep -q 'src/real/CLAUDE.md' && echo true || echo false)"
+assert_eq "resources/list excludes .claude runtime copy" "true" \
+  "$(echo "$MCP15" | grep -q '.claude/skills/knowledge-graph/SKILL.md' && echo false || echo true)"
+assert_eq "resources/list excludes node_modules" "true" \
+  "$(echo "$MCP15" | grep -q 'node_modules/pkg/CLAUDE.md' && echo false || echo true)"
+assert_eq "resources/list excludes build output" "true" \
+  "$(echo "$MCP15" | grep -q 'dist/CLAUDE.md' && echo false || echo true)"
+assert_eq "resources/list excludes worktrees" "true" \
+  "$(echo "$MCP15" | grep -q '.worktrees/feature/CLAUDE.md' && echo false || echo true)"
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ── Test 16: installer stays project-level only for Codex/MCP ────────────────
+echo ""
+echo "Test 16: installer stays project-level only for Codex/MCP"
+TMPDIR9=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9"' EXIT
+TARGET8="$TMPDIR9/project"
+HOME8="$TMPDIR9/home"
+FAKEBIN8="$TMPDIR9/bin"
+CODEX_LOG8="$TMPDIR9/codex.log"
 CODEX_CONFIG8="$HOME8/.codex/config.toml"
 mkdir -p "$TARGET8" "$FAKEBIN8" "$(dirname "$CODEX_CONFIG8")"
 cat > "$CODEX_CONFIG8" <<EOF
@@ -371,9 +404,9 @@ HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standal
 assert_eq "installer rejects HOME as target" "true" \
   "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
 
-# ── Test 16: standalone/source script parity ─────────────────────────────────
+# ── Test 17: standalone/source script parity ─────────────────────────────────
 echo ""
-echo "Test 16: standalone/source script parity"
+echo "Test 17: standalone/source script parity"
 for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
   assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
 done

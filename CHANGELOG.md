@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed — MCP resource scans skip runtime and generated directories
+
+`mcp-server.sh` now prunes `.claude`, `.knowledge-graph`, `.worktrees`,
+dependency directories, build outputs, and common caches when listing or
+querying canonical `CLAUDE.md` / `SKILL.md` nodes. This keeps Codex/MCP results
+focused on durable project knowledge and avoids wasting time on runtime copies
+or generated files.
+
 ### Fixed — Codex MCP registration is project-level only
 
 The installer no longer calls `codex mcp add` or writes user-level Codex config.
