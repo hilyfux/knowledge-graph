@@ -577,6 +577,10 @@ assert_eq "installer preserves malformed .mcp.json" '{"mcpServers":' \
 HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$HOME8" 2>&1 || true)
 assert_eq "installer rejects HOME as target" "true" \
   "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
+assert_eq "PowerShell installer validates project .mcp.json shape" "true" \
+  "$(rg -q 'function Read-ProjectMcpJson' "$REPO_ROOT/standalone/install.ps1" && rg -q 'mcpServers must be an object' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
+assert_eq "PowerShell installer preserves invalid .mcp.json" "true" \
+  "$(rg -q 'Preserving existing .mcp.json unchanged' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
 
 # ── Test 23: standalone/source script parity ─────────────────────────────────
 echo ""

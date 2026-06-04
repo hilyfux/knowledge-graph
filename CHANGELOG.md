@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed — PowerShell installer preserves invalid project MCP JSON
+
+`standalone/install.ps1` now validates an existing project `.mcp.json` before
+install side effects, matching the bash installer behavior. Malformed JSON or a
+non-object `mcpServers` value fails clearly and leaves the existing file
+unchanged.
+
 ### Fixed — Codex project env wins over stale Claude env
 
 MCP and shared helper scripts now prefer `KG_PROJECT_DIR` over

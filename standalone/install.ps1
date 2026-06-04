@@ -71,6 +71,34 @@ function Set-ManagedCodexMcpBlock {
     Set-Content -Path $ConfigPath -Value $text -Encoding UTF8
 }
 
+function Read-ProjectMcpJson {
+    param([string]$McpJson)
+    try {
+        $doc = Get-Content -Raw $McpJson | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Fail ".mcp.json must be a JSON object and mcpServers must be an object: $McpJson. Preserving existing .mcp.json unchanged."
+    }
+    if ($null -eq $doc -or $doc -isnot [System.Management.Automation.PSCustomObject]) {
+        Fail ".mcp.json must be a JSON object and mcpServers must be an object: $McpJson. Preserving existing .mcp.json unchanged."
+    }
+    $mcpServersProp = $doc.PSObject.Properties['mcpServers']
+    if ($mcpServersProp -and $null -ne $mcpServersProp.Value -and
+        $mcpServersProp.Value -isnot [System.Management.Automation.PSCustomObject]) {
+        Fail ".mcp.json must be a JSON object and mcpServers must be an object: $McpJson. Preserving existing .mcp.json unchanged."
+    }
+    $doc
+}
+
+function Ensure-McpServersObject {
+    param([System.Management.Automation.PSCustomObject]$Doc)
+    $mcpServersProp = $Doc.PSObject.Properties['mcpServers']
+    if (-not $mcpServersProp) {
+        $Doc | Add-Member -NotePropertyName 'mcpServers' -NotePropertyValue ([PSCustomObject]@{}) -Force
+    } elseif ($null -eq $mcpServersProp.Value) {
+        $Doc.mcpServers = [PSCustomObject]@{}
+    }
+}
+
 # ── Preflight: bash + jq must be on PATH ─────────────────────────────────────
 $bash = Get-Command bash -ErrorAction SilentlyContinue
 $jq   = Get-Command jq   -ErrorAction SilentlyContinue
@@ -106,6 +134,11 @@ if ($TargetPath -eq [System.IO.Path]::GetPathRoot($TargetPath)) {
 }
 if (-not (Test-Path $TargetPath -PathType Container)) {
     Fail "Target does not exist or is not a directory: $TargetPath"
+}
+
+$mcpJson = Join-Path $TargetPath '.mcp.json'
+if (Test-Path $mcpJson) {
+    [void](Read-ProjectMcpJson -McpJson $mcpJson)
 }
 
 $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -314,7 +347,6 @@ if (Test-Path $agentsPath) {
 Info 'Updated AGENTS.md with Codex Knowledge Graph notes'
 
 # ── Register MCP server in .mcp.json ─────────────────────────────────────────
-$mcpJson       = Join-Path $TargetPath '.mcp.json'
 # Use forward slashes in the args path so the JSON stays sane across shells
 $mcpServerPath = ($SkillDst -replace '\\', '/') + '/scripts/mcp-server.sh'
 $mcpEnv = [PSCustomObject]@{ KG_PROJECT_DIR = $TargetPath }
@@ -329,10 +361,8 @@ if ($env:CODEX_MCP_STARTUP_TIMEOUT_SEC) {
 }
 
 if (Test-Path $mcpJson) {
-    $existing = Get-Content -Raw $mcpJson | ConvertFrom-Json
-    if (-not $existing.mcpServers) {
-        $existing | Add-Member -NotePropertyName 'mcpServers' -NotePropertyValue (New-Object PSObject) -Force
-    }
+    $existing = Read-ProjectMcpJson -McpJson $mcpJson
+    Ensure-McpServersObject -Doc $existing
     if (-not $existing.mcpServers.'knowledge-graph') {
         $kgMcp = [PSCustomObject]@{
             type    = 'stdio'
