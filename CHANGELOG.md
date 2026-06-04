@@ -21,6 +21,12 @@ knowledge-node scans. Claude hook paths such as decay checks and index builds no
 longer traverse `.claude`, `.worktrees`, dependency directories, build outputs,
 or common caches.
 
+### Fixed — Shared knowledge-node lookups stay inside the project
+
+`guard.sh knowledge_node_path` now rejects absolute paths and `..` segments.
+Claude hook paths that resolve canonical `CLAUDE.md` / `SKILL.md` files cannot
+read sibling projects or parent-directory knowledge nodes.
+
 ### Changed — Predict inference uses fewer subprocesses
 
 `infer.sh predict` now parses recent event lines with a single raw-input jq pass

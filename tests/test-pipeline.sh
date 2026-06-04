@@ -331,7 +331,9 @@ assert_eq "kg_read_node ignores adapter AGENTS.md" "true" \
 echo ""
 echo "Test 15: MCP resource scan prunes runtime/dependency/build dirs"
 TMPDIR8=$(mktemp -d)
-trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8"' EXIT
+OUTSIDE8=$(mktemp -d "$(dirname "$TMPDIR8")/kg-outside.XXXXXX")
+OUTSIDE8_REL="../$(basename "$OUTSIDE8")"
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$OUTSIDE8"' EXIT
 export CLAUDE_PROJECT_DIR="$TMPDIR8"
 mkdir -p \
   "$TMPDIR8/.knowledge-graph" \
@@ -346,8 +348,10 @@ printf '# runtime skill copy\n' > "$TMPDIR8/.claude/skills/knowledge-graph/SKILL
 printf '# dependency node\n' > "$TMPDIR8/node_modules/pkg/CLAUDE.md"
 printf '# build node\n' > "$TMPDIR8/dist/CLAUDE.md"
 printf '# worktree node\n' > "$TMPDIR8/.worktrees/feature/CLAUDE.md"
+printf '# outside node\n' > "$OUTSIDE8/CLAUDE.md"
 MCP15=$(printf '{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 GUARD15=$(bash -c 'source "$1/guard.sh"; find_knowledge_nodes' _ "$SCRIPT_DIR" 2>/dev/null || true)
+GUARD15_TRAVERSAL=$(bash -c 'source "$1/guard.sh"; knowledge_node_path "$2"' _ "$SCRIPT_DIR" "$OUTSIDE8_REL" 2>/dev/null || true)
 assert_eq "resources/list includes root node" "true" \
   "$(echo "$MCP15" | grep -q 'CLAUDE.md' && echo true || echo false)"
 assert_eq "resources/list includes source module" "true" \
@@ -370,6 +374,7 @@ assert_eq "shared scan excludes build output" "true" \
   "$(echo "$GUARD15" | grep -q 'dist/CLAUDE.md' && echo false || echo true)"
 assert_eq "shared scan excludes worktrees" "true" \
   "$(echo "$GUARD15" | grep -q '.worktrees/feature/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared lookup rejects path traversal" "" "$GUARD15_TRAVERSAL"
 
 # ── Test 16: MCP preserves string JSON-RPC ids ───────────────────────────────
 echo ""

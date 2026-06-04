@@ -128,9 +128,35 @@ tlb_invalidate() {
 }
 
 # ── Shared: knowledge node helpers ───────────────────────────────────────────
+is_safe_rel_path() {
+  local rel="$1" part old_ifs
+  [ -n "$rel" ] || return 1
+  if [ "$rel" = "." ] || [ "$rel" = "root" ]; then
+    return 0
+  fi
+  case "$rel" in
+    /*) return 1 ;;
+  esac
+  old_ifs="$IFS"
+  IFS='/'
+  for part in $rel; do
+    if [ "$part" = ".." ]; then
+      IFS="$old_ifs"
+      return 1
+    fi
+  done
+  IFS="$old_ifs"
+  return 0
+}
+
 knowledge_node_path() {
   local dir="$1" base
-  [ "$dir" = "." ] && base="$CLAUDE_PROJECT_DIR" || base="$CLAUDE_PROJECT_DIR/$dir"
+  if [ "$dir" = "." ] || [ "$dir" = "root" ]; then
+    base="$CLAUDE_PROJECT_DIR"
+  else
+    is_safe_rel_path "$dir" || return 1
+    base="$CLAUDE_PROJECT_DIR/$dir"
+  fi
   [ -f "$base/CLAUDE.md" ] && { printf '%s\n' "$base/CLAUDE.md"; return 0; }
   [ -f "$base/SKILL.md" ] && { printf '%s\n' "$base/SKILL.md"; return 0; }
   return 1
