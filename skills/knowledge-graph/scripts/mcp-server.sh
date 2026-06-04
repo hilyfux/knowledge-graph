@@ -35,6 +35,7 @@ ANALYSIS="$KG_DATA/graph-analysis.json"
 INDEX="$KG_DATA/knowledge-index.md"
 SNAPSHOT="$KG_DATA/work-snapshot.md"
 MCP_INSTRUCTIONS='Use kg_status first to check graph health. Before editing unfamiliar code, use kg_query to find rules, then kg_read_node for relevant CLAUDE.md/SKILL.md nodes. Use kg_predict before edits for related modules and kg_recent_work on resume. Treat .knowledge-graph/ as runtime data: read through tools/resources, do not commit it.'
+MCP_QUERY_MAX_LIMIT=20
 
 knowledge_node_path() {
   local module_path="$1" base
@@ -153,7 +154,7 @@ handle_tools_list() {
       {
         "name":"kg_query",
         "description":"Full-text search across canonical knowledge nodes (CLAUDE.md and SKILL.md bodies, not just the tag index). Returns ranked matches with file paths and snippet excerpts. Use this to find prohibitions, conventions, or references for a topic.",
-        "inputSchema":{"type":"object","properties":{"question":{"type":"string","description":"Search query (keywords or short phrase)"},"limit":{"type":"integer","description":"Max results to return (default 8)","default":8}},"required":["question"]}
+        "inputSchema":{"type":"object","properties":{"question":{"type":"string","description":"Literal search text (keywords or short phrase)"},"limit":{"type":"integer","description":"Max results to return (default 8, max 20)","default":8,"minimum":1,"maximum":20}},"required":["question"]}
       },
       {
         "name":"kg_read_node",
@@ -284,6 +285,8 @@ tool_kg_query() {
 
   if [ -z "$question" ]; then err_empty_arg "$id" "question"; return; fi
   case "$limit" in ''|*[!0-9]*) limit=8 ;; esac
+  [ "$limit" -lt 1 ] && limit=8
+  [ "$limit" -gt "$MCP_QUERY_MAX_LIMIT" ] && limit="$MCP_QUERY_MAX_LIMIT"
 
   # Search all canonical CLAUDE.md / SKILL.md bodies, not just the index.
   # Locally disable pipefail: head -n closes the pipe early, which SIGPIPEs
@@ -296,7 +299,7 @@ tool_kg_query() {
     while IFS= read -r f; do
       local rel
       rel="${f#$PROJECT_DIR/}"
-      grep -in --color=never -- "$question" "$f" 2>/dev/null | head -3 | \
+      grep -Fin --color=never -- "$question" "$f" 2>/dev/null | head -3 | \
         while IFS=: read -r lineno excerpt; do
           printf "%s\t%s\t%s\n" "$rel" "$lineno" "$excerpt"
         done

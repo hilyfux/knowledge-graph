@@ -357,12 +357,18 @@ export CLAUDE_PROJECT_DIR="$TMPDIR8"
 mkdir -p \
   "$TMPDIR8/.knowledge-graph" \
   "$TMPDIR8/src/real" \
+  "$TMPDIR8/src/literal" \
   "$TMPDIR8/.claude/skills/knowledge-graph" \
   "$TMPDIR8/node_modules/pkg" \
   "$TMPDIR8/dist" \
   "$TMPDIR8/.worktrees/feature"
 printf '# root node\n' > "$TMPDIR8/CLAUDE.md"
 printf '# real module\n' > "$TMPDIR8/src/real/CLAUDE.md"
+printf '# literal module\nUse [codex] as a literal token.\n' > "$TMPDIR8/src/literal/CLAUDE.md"
+for i in $(seq 1 30); do
+  mkdir -p "$TMPDIR8/src/query-$i"
+  printf '# query module %s\nquery-limit-marker\n' "$i" > "$TMPDIR8/src/query-$i/CLAUDE.md"
+done
 printf '# runtime skill copy\n' > "$TMPDIR8/.claude/skills/knowledge-graph/SKILL.md"
 printf '# dependency node\n' > "$TMPDIR8/node_modules/pkg/CLAUDE.md"
 printf '# build node\n' > "$TMPDIR8/dist/CLAUDE.md"
@@ -399,7 +405,10 @@ assert_eq "shared lookup rejects path traversal" "" "$GUARD15_TRAVERSAL"
 echo ""
 echo "Test 16: MCP preserves string JSON-RPC ids"
 MCP16_INIT=$(printf '{"jsonrpc":"2.0","id":"req-init","method":"initialize","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_TOOLS=$(printf '{"jsonrpc":"2.0","id":"req-tools","method":"tools/list","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 MCP16_TOOL=$(printf '{"jsonrpc":"2.0","id":"req-status","method":"tools/call","params":{"name":"kg_status","arguments":{}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_QUERY_LIMIT=$(printf '{"jsonrpc":"2.0","id":"req-query-limit","method":"tools/call","params":{"name":"kg_query","arguments":{"question":"query-limit-marker","limit":1000}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_QUERY_LITERAL=$(printf '{"jsonrpc":"2.0","id":"req-query-literal","method":"tools/call","params":{"name":"kg_query","arguments":{"question":"[codex]","limit":5}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
 assert_eq "initialize with string id returns valid JSON" "true" \
   "$(echo "$MCP16_INIT" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "initialize preserves string id" "true" \
@@ -410,6 +419,12 @@ assert_eq "tool call with string id returns valid JSON" "true" \
   "$(echo "$MCP16_TOOL" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
 assert_eq "tool call preserves string id" "true" \
   "$(echo "$MCP16_TOOL" | jq -e '.id == "req-status"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "kg_query schema advertises max limit" "true" \
+  "$(echo "$MCP16_TOOLS" | jq -e '.result.tools[] | select(.name == "kg_query") | .inputSchema.properties.limit.maximum == 20' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "kg_query clamps oversized limit" "true" \
+  "$(QUERY_LIMIT_TEXT=$(echo "$MCP16_QUERY_LIMIT" | jq -r '.result.content[0].text // ""' 2>/dev/null); [ "$(echo "$QUERY_LIMIT_TEXT" | grep -c 'src/query-' || true)" -le 20 ] && echo true || echo false)"
+assert_eq "kg_query treats search text as literal" "true" \
+  "$(echo "$MCP16_QUERY_LITERAL" | jq -e '.result.content[0].text | contains("src/literal/CLAUDE.md")' >/dev/null 2>&1 && echo true || echo false)"
 
 # ── Test 17: MCP returns JSON-RPC errors for invalid input ───────────────────
 echo ""

@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed — MCP query output is capped and literal
+
+`kg_query` now advertises and enforces a maximum result limit of 20, keeping
+Codex/MCP tool output bounded even when a client asks for an oversized limit.
+Query text is also treated as a literal string instead of a regex, so terms
+containing characters like `[` search accurately instead of failing through
+grep pattern parsing.
+
 ### Fixed — PowerShell installer preserves invalid project MCP JSON
 
 `standalone/install.ps1` now validates an existing project `.mcp.json` before
