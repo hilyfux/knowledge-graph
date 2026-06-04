@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed — Codex project env wins over stale Claude env
+
+MCP and shared helper scripts now prefer `KG_PROJECT_DIR` over
+`CLAUDE_PROJECT_DIR` when both are present. This keeps Codex project-level MCP
+config authoritative even if a shell or parent process carries a stale Claude
+project env.
+
 ### Changed — MCP initialize guides Codex toward low-cost context use
 
 `mcp-server.sh` now returns concise MCP `instructions` during initialization.

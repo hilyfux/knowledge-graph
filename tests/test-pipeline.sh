@@ -296,6 +296,25 @@ assert_eq "analyze status works with KG_PROJECT_DIR" "true" \
   "$(echo "$OUT13" | grep -q 'Pending events:' && echo true || echo false)"
 assert_eq "guard exports CLAUDE_PROJECT_DIR fallback" "true" \
   "$(bash -c 'source "$1/guard.sh"; [ "$CLAUDE_PROJECT_DIR" = "$KG_PROJECT_DIR" ] && echo true || echo false' _ "$SCRIPT_DIR")"
+TMPDIR6_STALE=$(mktemp -d)
+mkdir -p "$TMPDIR6_STALE/.knowledge-graph" "$TMPDIR6/.knowledge-graph"
+printf '{"e":"r","p":"kg/file.ts","t":1}\n' > "$TMPDIR6/.knowledge-graph/graph-events.jsonl"
+printf '{"e":"r","p":"stale/one.ts","t":1}\n{"e":"r","p":"stale/two.ts","t":2}\n' > "$TMPDIR6_STALE/.knowledge-graph/graph-events.jsonl"
+printf '{"source":"kg-project"}\n' > "$TMPDIR6/.knowledge-graph/version.json"
+printf '{"source":"stale-project"}\n' > "$TMPDIR6_STALE/.knowledge-graph/version.json"
+export CLAUDE_PROJECT_DIR="$TMPDIR6_STALE"
+export KG_PROJECT_DIR="$TMPDIR6"
+OUT13_BOTH=$(bash "$SCRIPT_DIR/analyze.sh" quick-status 2>/dev/null || true)
+MCP13_BOTH=$(printf '{"jsonrpc":"2.0","id":"kg-precedence","method":"tools/call","params":{"name":"kg_status","arguments":{}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+VERSION13_BOTH=$(bash "$SCRIPT_DIR/version.sh" status 2>/dev/null || true)
+assert_eq "guard prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(bash -c 'source "$1/guard.sh"; [ "$CLAUDE_PROJECT_DIR" = "$KG_PROJECT_DIR" ] && [ "$CLAUDE_PROJECT_DIR" = "$2" ] && echo true || echo false' _ "$SCRIPT_DIR" "$TMPDIR6")"
+assert_eq "analyze prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(echo "$OUT13_BOTH" | grep -q 'Pending events: 1' && echo true || echo false)"
+assert_eq "mcp server prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(echo "$MCP13_BOTH" | jq -e '.result.content[0].text | contains("pending events: 1")' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "version prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(echo "$VERSION13_BOTH" | jq -e '.source == "kg-project"' >/dev/null 2>&1 && echo true || echo false)"
 unset KG_PROJECT_DIR
 export CLAUDE_PROJECT_DIR="$TMPDIR5"
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 # guard.sh — shared env guard + helpers for all kg hook scripts
 resolve_project_dir() {
-  local project="${CLAUDE_PROJECT_DIR:-${KG_PROJECT_DIR:-}}"
+  local project="${KG_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
   if [ -z "$project" ]; then
     local d
     d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +24,10 @@ CLAUDE_PROJECT_DIR="$(resolve_project_dir)"
 [ "$CLAUDE_PROJECT_DIR" = "$HOME" ] && exit 0
 [ "$CLAUDE_PROJECT_DIR" = "/" ] && exit 0
 export CLAUDE_PROJECT_DIR
+if [ -n "${KG_PROJECT_DIR:-}" ]; then
+  KG_PROJECT_DIR="$CLAUDE_PROJECT_DIR"
+  export KG_PROJECT_DIR
+fi
 
 KG_DATA="$CLAUDE_PROJECT_DIR/.knowledge-graph"
 [ -d "$KG_DATA" ] || mkdir -p "$KG_DATA"

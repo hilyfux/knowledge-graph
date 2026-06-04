@@ -11,10 +11,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION="1.2.2"
 
 # ── Project-dir resolution ────────────────────────────────────────────────────
-# Priority: CLAUDE_PROJECT_DIR env > KG_PROJECT_DIR env > walk up from script
-# dir > $PWD (warn). Codex / non-Claude agents may not set
-# CLAUDE_PROJECT_DIR, so the fallback has to be reliable.
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${KG_PROJECT_DIR:-}}"
+# Priority: KG_PROJECT_DIR env > CLAUDE_PROJECT_DIR env > walk up from script
+# dir > $PWD (warn). Codex/MCP project config sets KG_PROJECT_DIR; Claude Code
+# may set CLAUDE_PROJECT_DIR.
+PROJECT_DIR="${KG_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
 if [ -z "$PROJECT_DIR" ]; then
   d="$SCRIPT_DIR"
   while [ "$d" != "/" ]; do

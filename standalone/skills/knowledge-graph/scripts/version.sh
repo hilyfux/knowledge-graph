@@ -1,7 +1,7 @@
 #!/bin/bash
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL_DIR="$(dirname "$SCRIPT_DIR")"
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$SKILL_DIR/../../.." 2>/dev/null && pwd)}"
+PROJECT_DIR="${KG_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-$(cd "$SKILL_DIR/../../.." 2>/dev/null && pwd)}}"
 VERSION_FILE="$SKILL_DIR/VERSION"
 STATUS_FILE="$PROJECT_DIR/.knowledge-graph/version.json"
 
