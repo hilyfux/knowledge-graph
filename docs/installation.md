@@ -57,8 +57,8 @@ cd knowledge-graph
 
 The PowerShell installer mirrors the bash one: copies the skill to
 `.claude\skills\knowledge-graph\`, merges hooks into `.claude\settings.json`,
-registers the MCP server in `.mcp.json`, attempts Codex CLI registration when
-`codex` is available, writes Codex notes to `AGENTS.md`, and adds
+registers the MCP server in project `.mcp.json`, writes Codex notes to
+`AGENTS.md`, and adds
 `.knowledge-graph/` to `.gitignore`. Runtime still uses the `.sh`
 scripts, so bash must be on your PATH.
 
@@ -93,13 +93,15 @@ For Codex and other MCP clients it also updates:
 AGENTS.md
 ```
 
-If `codex` is available on `PATH`, the installer also registers the same server
-with Codex CLI via `codex mcp add knowledge-graph`.
+The installer registers the server only in project `.mcp.json` and writes
+`startup_timeout_sec = 60` there by default. It never creates user-level Codex
+MCP registrations; set `CODEX_MCP_STARTUP_TIMEOUT_SEC` before install to use a
+different project-level timeout.
 
 ## After install
 
 1. Restart Claude Code so hooks reload, if you use Claude Code.
-2. In Codex CLI, read `AGENTS.md` and run `codex mcp list` to confirm `knowledge-graph` is loaded. Other MCP clients can use `.mcp.json`. Codex reads canonical module `CLAUDE.md` through MCP instead of maintaining duplicate module `AGENTS.md` files.
+2. In Codex CLI or another MCP-aware client, use the project `.mcp.json` server entry. Codex reads canonical module `CLAUDE.md` through MCP instead of maintaining duplicate module `AGENTS.md` files.
 3. Run `/knowledge-graph init` in Claude Code, or start with `kg_status` / `kg_query` / `kg_read_node` in Codex.
 
 ## Reinstalling

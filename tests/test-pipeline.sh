@@ -325,15 +325,25 @@ assert_eq "kg_read_node ignores adapter AGENTS.md" "true" \
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-# ── Test 15: installer registers Codex CLI MCP server when available ─────────
+# ── Test 15: installer stays project-level only for Codex/MCP ────────────────
 echo ""
-echo "Test 15: installer registers Codex CLI MCP server"
+echo "Test 15: installer stays project-level only for Codex/MCP"
 TMPDIR8=$(mktemp -d)
 trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8"' EXIT
 TARGET8="$TMPDIR8/project"
+HOME8="$TMPDIR8/home"
 FAKEBIN8="$TMPDIR8/bin"
 CODEX_LOG8="$TMPDIR8/codex.log"
-mkdir -p "$TARGET8" "$FAKEBIN8"
+CODEX_CONFIG8="$HOME8/.codex/config.toml"
+mkdir -p "$TARGET8" "$FAKEBIN8" "$(dirname "$CODEX_CONFIG8")"
+cat > "$CODEX_CONFIG8" <<EOF
+[mcp_servers.knowledge-graph]
+command = "bash"
+args = ["/old/project/.claude/skills/knowledge-graph/scripts/mcp-server.sh"]
+
+[mcp_servers.knowledge-graph.env]
+KG_PROJECT_DIR = "/old/project"
+EOF
 cat > "$FAKEBIN8/codex" <<'SH'
 #!/bin/bash
 printf '%s\n' "$*" >> "$CODEX_TEST_LOG"
@@ -346,13 +356,20 @@ esac
 exit 0
 SH
 chmod +x "$FAKEBIN8/codex"
-CODEX_TEST_LOG="$CODEX_LOG8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8" >/dev/null 2>&1
-assert_eq "installer calls codex mcp add" "true" \
-  "$(grep -q 'mcp add knowledge-graph' "$CODEX_LOG8" 2>/dev/null && echo true || echo false)"
-assert_eq "codex mcp add includes KG_PROJECT_DIR" "true" \
-  "$(grep -q "KG_PROJECT_DIR=$TARGET8" "$CODEX_LOG8" 2>/dev/null && echo true || echo false)"
-assert_eq "codex mcp add uses installed mcp-server.sh" "true" \
-  "$(grep -q "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" "$CODEX_LOG8" 2>/dev/null && echo true || echo false)"
+CODEX_TEST_LOG="$CODEX_LOG8" HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8" >/dev/null 2>&1
+assert_eq "installer does NOT call user-level codex mcp" "true" \
+  "$([ ! -s "$CODEX_LOG8" ] && echo true || echo false)"
+assert_eq "codex user config stays unchanged" "true" \
+  "$(grep -q '/old/project/.claude/skills/knowledge-graph/scripts/mcp-server.sh' "$CODEX_CONFIG8" 2>/dev/null && echo true || echo false)"
+assert_eq "codex user config does NOT point at installed server" "true" \
+  "$(grep -q "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" "$CODEX_CONFIG8" 2>/dev/null && echo false || echo true)"
+assert_eq "project .mcp.json has startup timeout" "true" \
+  "$(jq -e '.mcpServers["knowledge-graph"].startup_timeout_sec == 60' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "project .mcp.json points at installed server" "true" \
+  "$(jq -e --arg p "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.mcpServers["knowledge-graph"].args == [$p]' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$HOME8" 2>&1 || true)
+assert_eq "installer rejects HOME as target" "true" \
+  "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
 
 # ── Test 16: standalone/source script parity ─────────────────────────────────
 echo ""

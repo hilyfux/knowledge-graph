@@ -6,6 +6,13 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Fixed — Codex MCP registration is project-level only
+
+The installer no longer calls `codex mcp add` or writes user-level Codex config.
+It only updates project `.mcp.json`, keeps `KG_PROJECT_DIR` current, and sets
+`startup_timeout_sec = 60` by default. The timeout can be overridden with
+`CODEX_MCP_STARTUP_TIMEOUT_SEC`.
+
 ### Fixed — Auto-update no longer blocks its own knowledge-node writes
 
 The PreToolUse(Write) guard used to block every write into a module that lacked a knowledge node — including the write that *created* `CLAUDE.md`. When the skill ran update mode, its own node-creation write was blocked by the very condition it was trying to resolve. Writes to `CLAUDE.md` / `SKILL.md` / `AGENTS.md` are now exempt.
