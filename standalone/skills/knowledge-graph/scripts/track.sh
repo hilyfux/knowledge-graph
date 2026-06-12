@@ -113,13 +113,25 @@ case "$CMD" in
           DIR_FAILS=$(jq -r --arg d "$TARGET_DIR" 'select(.e == "f" and ((.p // "") | startswith($d+"/")))' "$EVENTS" 2>/dev/null | wc -l | tr -d ' ')
         fi
 
+        # permissionDecision:"deny" is the current documented block form for
+        # PreToolUse (top-level decision:"block" is deprecated). jq -nc builds
+        # the JSON so paths/quotes/backslashes can never produce invalid output.
         if [ "$DIR_WRITES" -ge 5 ] || [ "$DIR_FAILS" -ge 1 ]; then
           # Complex module: has significant history or failures → use skill for deep analysis
-          printf '{"decision":"block","reason":"Write paused. Module %s/ has significant activity (%s writes, %s failures) but no knowledge node. Call Skill(skill=\\\"knowledge-graph\\\", args=\\\"update\\\") for code+history analysis. Then retry."}\n' "$TARGET_DIR" "$DIR_WRITES" "$DIR_FAILS"
+          REASON="Write paused. Module $TARGET_DIR/ has significant activity ($DIR_WRITES writes, $DIR_FAILS failures) but no knowledge node. Call Skill(skill=\"knowledge-graph\", args=\"update\") for code+history analysis. Then retry."
         else
           # Simple module: new/minimal history → direct write with format template
-          printf '{"decision":"block","reason":"Write paused. Module %s/ needs CLAUDE.md (max 20 lines). Create it now:\\n# %s\\n## Prohibitions\\n- {behavior} → {consequence}\\n## When Changing\\n- {condition} → @{path}/CLAUDE.md\\n## Conventions\\n- {rule}\\nEvidence-only, no guesses. Also add one-line entry to .knowledge-graph/knowledge-index.md. Then retry."}\n' "$TARGET_DIR" "$(basename "$TARGET_DIR")"
+          REASON="Write paused. Module $TARGET_DIR/ needs CLAUDE.md (max 20 lines). Create it now:
+# $(basename "$TARGET_DIR")
+## Prohibitions
+- {behavior} → {consequence}
+## When Changing
+- {condition} → @{path}/CLAUDE.md
+## Conventions
+- {rule}
+Evidence-only, no guesses. Also add one-line entry to .knowledge-graph/knowledge-index.md. Then retry."
         fi
+        jq -nc --arg r "$REASON" '{hookSpecificOutput:{hookEventName:"PreToolUse",permissionDecision:"deny",permissionDecisionReason:$r}}'
         exit 0
       fi
     fi
@@ -158,8 +170,7 @@ case "$CMD" in
     # On repeat access, skip prediction but still surface the size warning.
     if [ "$FIRST_ACCESS" = false ]; then
       if [ -n "$SIZE_WARN" ]; then
-        ESCAPED=$(printf '%s' "$SIZE_WARN" | sed 's/"/\\"/g' | tr '\n' ' ')
-        printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$ESCAPED"
+        emit_hook_context "$(json_escape "$SIZE_WARN")" "PreToolUse"
       fi
       exit 0
     fi
@@ -182,17 +193,19 @@ case "$CMD" in
         [ -z "$pdir" ] && continue
         NODE=$(knowledge_node_path "$pdir" 2>/dev/null || true)
         RULES=$(get_prohibitions "$NODE" 3)
-        [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}\n"
+        [ -n "$RULES" ] && CONTEXT="${CONTEXT}[${pdir}] ${RULES}"$'\n'
       done <<< "$PRED_DIRS"
     fi
 
-    # Combine size warning + related-module prohibitions into one hook output
+    # Combine size warning + related-module prohibitions into one hook output.
+    # json_escape (jq -Rs) is mandatory here: prohibition text routinely contains
+    # backslashes/quotes/tabs that hand-rolled sed escaping turned into invalid
+    # JSON ("Failed to parse hook output as JSON" on every affected read).
     COMBINED=""
     [ -n "$SIZE_WARN" ]   && COMBINED="$SIZE_WARN"
     [ -n "$CONTEXT" ]     && COMBINED="${COMBINED}[Related] ${CONTEXT}"
     if [ -n "$COMBINED" ]; then
-      ESCAPED=$(printf '%s' "$COMBINED" | sed 's/"/\\"/g' | tr '\n' ' ')
-      printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$ESCAPED"
+      emit_hook_context "$(json_escape "$COMBINED")" "PreToolUse"
     fi
     ;;
 

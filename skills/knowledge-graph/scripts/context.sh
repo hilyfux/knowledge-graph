@@ -89,17 +89,12 @@ case "$CMD" in
     ;;
 
   precompact)
-    # Save working state before compaction (dirty writeback)
+    # Save working state before compaction (dirty writeback) — side effect only.
+    # PreCompact has NO hookSpecificOutput channel in the Claude Code output
+    # schema (verified against 2.1.170): emitting JSON here fails validation on
+    # every compaction. Post-compact context is injected by the SessionStart
+    # "compact" branch instead.
     save_snapshot
-
-    # Tell compactor what to preserve
-    WS_SUMMARY=""
-    if [ -f "$WS" ] && [ -s "$WS" ]; then
-      WS_DIRS=$(ws_top 3)
-      [ -n "$WS_DIRS" ] && WS_SUMMARY="活跃模块: $(echo "$WS_DIRS" | tr '\n' '、' | sed 's/、$//')"
-    fi
-    GUIDE="保留：${WS_SUMMARY:+$WS_SUMMARY; }模块禁忌(## 禁忌)、进行中任务、错误修复"
-    emit_hook_context "$(json_escape "$GUIDE")" "PreCompact"
     ;;
 
   compact)
@@ -130,10 +125,10 @@ case "$CMD" in
     ;;
 
   postcompact)
-    if [ -f "$EVENTS" ] && [ -s "$EVENTS" ]; then
-      PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
-      [ "$PENDING" -ge 5 ] && emit_hook_context "$(json_escape "[知识图谱] 待分析：${PENDING} 条")" "PostCompact"
-    fi
+    # PostCompact has NO hookSpecificOutput channel in the Claude Code output
+    # schema (verified against 2.1.170): any JSON emitted here fails validation.
+    # The pending-events notice already reaches the session via the SessionStart
+    # "compact" branch, so this hook is intentionally silent.
     ;;
 
   subagent)
