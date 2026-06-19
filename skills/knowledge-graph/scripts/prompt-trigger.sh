@@ -14,6 +14,24 @@ PROMPT=$(echo "$INPUT" | jq -r '.prompt // ""' 2>/dev/null)
 echo "$PROMPT" | grep -qE '<task-notification>|<system-reminder>|<command-name>' && exit 0
 
 EVENTS="$KG_DATA/graph-events.jsonl"
+UPDATE_PENDING="$KG_DATA/.update-pending"
+UPDATE_LOCK="$KG_DATA/.kg-updating"
+
+# Trigger 0: recurring auto-trigger driven by write counter in track.sh.
+# Fires every N writes (default 15) — independent of the session-scoped
+# `.trigger-checked` marker so it can re-arm across the same session.
+# Cleared here so we don't double-fire; counter resets only after a successful
+# skill update (analyze.sh unlock).
+if [ -f "$UPDATE_PENDING" ] && [ ! -f "$UPDATE_LOCK" ]; then
+  WROTE=0
+  [ -f "$KG_DATA/.writes-since-update" ] && WROTE=$(cat "$KG_DATA/.writes-since-update" 2>/dev/null | tr -d ' \n' || echo 0)
+  # Reset both markers so we don't re-fire on every subsequent prompt; the
+  # counter starts over and will re-arm after another N writes if the user
+  # ignores the suggestion.
+  rm -f "$UPDATE_PENDING" "$KG_DATA/.writes-since-update" 2>/dev/null
+  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[kg auto-trigger] %s writes accumulated since last update. Invoke Skill tool (skill: knowledge-graph) to run update before continuing — keeps the knowledge graph in sync with what changed."}}\n' "$WROTE"
+  exit 0
+fi
 
 # Trigger 1: auto-update on first user message if modules need knowledge nodes
 # Use a session-scoped marker to fire only once per session
@@ -26,7 +44,11 @@ if [ ! -f "$TRIGGER_MARKER" ] && [ -f "$KG_DATA/.initialized" ] && [ -f "$EVENTS
     for d in $(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
       | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10); do
       [ "$d" = "." ] && continue
-      has_knowledge_node "$d" || MISSING=$((MISSING + 1))
+      [ "${d#.knowledge-graph}" != "$d" ] && continue
+      [ "${d#.claude}" != "$d" ] && continue
+      [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+      has_knowledge_node "$d" && continue
+      MISSING=$((MISSING + 1))
     done
     if [ "$MISSING" -gt 0 ]; then
       printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[kg auto-trigger] %d active modules lack knowledge nodes (%d events pending). Before starting user task, invoke Skill tool (skill: knowledge-graph) to run auto-update. This takes ~30 seconds and will improve code quality for this session."}}\n' "$MISSING" "$PENDING"

@@ -16,9 +16,13 @@ PASS=0
 FAIL=0
 TOTAL=0
 
-# macOS date doesn't support %N; use python3 for ms-precision timestamps
+# macOS date doesn't support %N; prefer lightweight Perl for ms timestamps.
 now_ms() {
-  python3 -c 'import time; print(int(time.time()*1000))'
+  if command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=time -e 'printf "%d\n", time() * 1000'
+  else
+    python3 -c 'import time; print(int(time.time()*1000))'
+  fi
 }
 
 assert_under_ms() {
@@ -292,6 +296,25 @@ assert_eq "analyze status works with KG_PROJECT_DIR" "true" \
   "$(echo "$OUT13" | grep -q 'Pending events:' && echo true || echo false)"
 assert_eq "guard exports CLAUDE_PROJECT_DIR fallback" "true" \
   "$(bash -c 'source "$1/guard.sh"; [ "$CLAUDE_PROJECT_DIR" = "$KG_PROJECT_DIR" ] && echo true || echo false' _ "$SCRIPT_DIR")"
+TMPDIR6_STALE=$(mktemp -d)
+mkdir -p "$TMPDIR6_STALE/.knowledge-graph" "$TMPDIR6/.knowledge-graph"
+printf '{"e":"r","p":"kg/file.ts","t":1}\n' > "$TMPDIR6/.knowledge-graph/graph-events.jsonl"
+printf '{"e":"r","p":"stale/one.ts","t":1}\n{"e":"r","p":"stale/two.ts","t":2}\n' > "$TMPDIR6_STALE/.knowledge-graph/graph-events.jsonl"
+printf '{"source":"kg-project"}\n' > "$TMPDIR6/.knowledge-graph/version.json"
+printf '{"source":"stale-project"}\n' > "$TMPDIR6_STALE/.knowledge-graph/version.json"
+export CLAUDE_PROJECT_DIR="$TMPDIR6_STALE"
+export KG_PROJECT_DIR="$TMPDIR6"
+OUT13_BOTH=$(bash "$SCRIPT_DIR/analyze.sh" quick-status 2>/dev/null || true)
+MCP13_BOTH=$(printf '{"jsonrpc":"2.0","id":"kg-precedence","method":"tools/call","params":{"name":"kg_status","arguments":{}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+VERSION13_BOTH=$(bash "$SCRIPT_DIR/version.sh" status 2>/dev/null || true)
+assert_eq "guard prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(bash -c 'source "$1/guard.sh"; [ "$CLAUDE_PROJECT_DIR" = "$KG_PROJECT_DIR" ] && [ "$CLAUDE_PROJECT_DIR" = "$2" ] && echo true || echo false' _ "$SCRIPT_DIR" "$TMPDIR6")"
+assert_eq "analyze prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(echo "$OUT13_BOTH" | grep -q 'Pending events: 1' && echo true || echo false)"
+assert_eq "mcp server prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(echo "$MCP13_BOTH" | jq -e '.result.content[0].text | contains("pending events: 1")' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "version prefers KG_PROJECT_DIR over stale CLAUDE_PROJECT_DIR" "true" \
+  "$(echo "$VERSION13_BOTH" | jq -e '.source == "kg-project"' >/dev/null 2>&1 && echo true || echo false)"
 unset KG_PROJECT_DIR
 export CLAUDE_PROJECT_DIR="$TMPDIR5"
 
@@ -323,10 +346,268 @@ assert_eq "kg_read_node reads canonical CLAUDE.md" "true" \
 assert_eq "kg_read_node ignores adapter AGENTS.md" "true" \
   "$(echo "$MCP7" | grep -q 'Adapter-only rule' && echo false || echo true)"
 
-# ── Test 8: standalone/source script parity ──────────────────────────────────
+# ── Test 15: MCP resource scan prunes runtime/dependency/build dirs ──────────
 echo ""
-echo "Test 8: standalone/source script parity"
+echo "Test 15: MCP resource scan prunes runtime/dependency/build dirs"
+TMPDIR8=$(mktemp -d)
+OUTSIDE8=$(mktemp -d "$(dirname "$TMPDIR8")/kg-outside.XXXXXX")
+OUTSIDE8_REL="../$(basename "$OUTSIDE8")"
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$OUTSIDE8"' EXIT
+export CLAUDE_PROJECT_DIR="$TMPDIR8"
+mkdir -p \
+  "$TMPDIR8/.knowledge-graph" \
+  "$TMPDIR8/src/real" \
+  "$TMPDIR8/src/literal" \
+  "$TMPDIR8/.claude/skills/knowledge-graph" \
+  "$TMPDIR8/node_modules/pkg" \
+  "$TMPDIR8/dist" \
+  "$TMPDIR8/.worktrees/feature"
+printf '# root node\n' > "$TMPDIR8/CLAUDE.md"
+printf '# real module\n' > "$TMPDIR8/src/real/CLAUDE.md"
+printf '# literal module\nUse [codex] as a literal token.\n' > "$TMPDIR8/src/literal/CLAUDE.md"
+for i in $(seq 1 30); do
+  mkdir -p "$TMPDIR8/src/query-$i"
+  printf '# query module %s\nquery-limit-marker\n' "$i" > "$TMPDIR8/src/query-$i/CLAUDE.md"
+done
+printf '# runtime skill copy\n' > "$TMPDIR8/.claude/skills/knowledge-graph/SKILL.md"
+printf '# dependency node\n' > "$TMPDIR8/node_modules/pkg/CLAUDE.md"
+printf '# build node\n' > "$TMPDIR8/dist/CLAUDE.md"
+printf '# worktree node\n' > "$TMPDIR8/.worktrees/feature/CLAUDE.md"
+printf '# outside node\n' > "$OUTSIDE8/CLAUDE.md"
+MCP15=$(printf '{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+GUARD15=$(bash -c 'source "$1/guard.sh"; find_knowledge_nodes' _ "$SCRIPT_DIR" 2>/dev/null || true)
+GUARD15_TRAVERSAL=$(bash -c 'source "$1/guard.sh"; knowledge_node_path "$2"' _ "$SCRIPT_DIR" "$OUTSIDE8_REL" 2>/dev/null || true)
+assert_eq "resources/list includes root node" "true" \
+  "$(echo "$MCP15" | grep -q 'CLAUDE.md' && echo true || echo false)"
+assert_eq "resources/list includes source module" "true" \
+  "$(echo "$MCP15" | grep -q 'src/real/CLAUDE.md' && echo true || echo false)"
+assert_eq "resources/list excludes .claude runtime copy" "true" \
+  "$(echo "$MCP15" | grep -q '.claude/skills/knowledge-graph/SKILL.md' && echo false || echo true)"
+assert_eq "resources/list excludes node_modules" "true" \
+  "$(echo "$MCP15" | grep -q 'node_modules/pkg/CLAUDE.md' && echo false || echo true)"
+assert_eq "resources/list excludes build output" "true" \
+  "$(echo "$MCP15" | grep -q 'dist/CLAUDE.md' && echo false || echo true)"
+assert_eq "resources/list excludes worktrees" "true" \
+  "$(echo "$MCP15" | grep -q '.worktrees/feature/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared scan includes source module" "true" \
+  "$(echo "$GUARD15" | grep -q 'src/real/CLAUDE.md' && echo true || echo false)"
+assert_eq "shared scan excludes .claude runtime copy" "true" \
+  "$(echo "$GUARD15" | grep -q '.claude/skills/knowledge-graph/SKILL.md' && echo false || echo true)"
+assert_eq "shared scan excludes node_modules" "true" \
+  "$(echo "$GUARD15" | grep -q 'node_modules/pkg/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared scan excludes build output" "true" \
+  "$(echo "$GUARD15" | grep -q 'dist/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared scan excludes worktrees" "true" \
+  "$(echo "$GUARD15" | grep -q '.worktrees/feature/CLAUDE.md' && echo false || echo true)"
+assert_eq "shared lookup rejects path traversal" "" "$GUARD15_TRAVERSAL"
+
+# ── Test 16: MCP preserves string JSON-RPC ids ───────────────────────────────
+echo ""
+echo "Test 16: MCP preserves string JSON-RPC ids"
+MCP16_INIT=$(printf '{"jsonrpc":"2.0","id":"req-init","method":"initialize","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_TOOLS=$(printf '{"jsonrpc":"2.0","id":"req-tools","method":"tools/list","params":{}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_TOOL=$(printf '{"jsonrpc":"2.0","id":"req-status","method":"tools/call","params":{"name":"kg_status","arguments":{}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_QUERY_LIMIT=$(printf '{"jsonrpc":"2.0","id":"req-query-limit","method":"tools/call","params":{"name":"kg_query","arguments":{"question":"query-limit-marker","limit":1000}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP16_QUERY_LITERAL=$(printf '{"jsonrpc":"2.0","id":"req-query-literal","method":"tools/call","params":{"name":"kg_query","arguments":{"question":"[codex]","limit":5}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "initialize with string id returns valid JSON" "true" \
+  "$(echo "$MCP16_INIT" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "initialize preserves string id" "true" \
+  "$(echo "$MCP16_INIT" | jq -e '.id == "req-init"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "initialize includes concise server instructions" "true" \
+  "$(echo "$MCP16_INIT" | jq -e '(.result.instructions | type == "string") and (.result.instructions | length <= 512) and (.result.instructions | contains("kg_status")) and (.result.instructions | contains("kg_query")) and (.result.instructions | contains("kg_read_node")) and (.result.instructions | contains(".knowledge-graph/"))' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "tool call with string id returns valid JSON" "true" \
+  "$(echo "$MCP16_TOOL" | jq -e '.jsonrpc == "2.0"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "tool call preserves string id" "true" \
+  "$(echo "$MCP16_TOOL" | jq -e '.id == "req-status"' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "kg_query schema advertises max limit" "true" \
+  "$(echo "$MCP16_TOOLS" | jq -e '.result.tools[] | select(.name == "kg_query") | .inputSchema.properties.limit.maximum == 20' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "kg_query clamps oversized limit" "true" \
+  "$(QUERY_LIMIT_TEXT=$(echo "$MCP16_QUERY_LIMIT" | jq -r '.result.content[0].text // ""' 2>/dev/null); [ "$(echo "$QUERY_LIMIT_TEXT" | grep -c 'src/query-' || true)" -le 20 ] && echo true || echo false)"
+assert_eq "kg_query treats search text as literal" "true" \
+  "$(echo "$MCP16_QUERY_LITERAL" | jq -e '.result.content[0].text | contains("src/literal/CLAUDE.md")' >/dev/null 2>&1 && echo true || echo false)"
+
+# ── Test 17: MCP returns JSON-RPC errors for invalid input ───────────────────
+echo ""
+echo "Test 17: MCP returns JSON-RPC errors for invalid input"
+MCP17_PARSE=$(printf 'not-json\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_INVALID=$(printf '[1,2,3]\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_EMPTY_OBJECT=$(printf '{}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_MISSING_METHOD=$(printf '{"jsonrpc":"2.0","id":50}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_BAD_METHOD=$(printf '{"jsonrpc":"2.0","id":51,"method":123}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP17_BAD_VERSION=$(printf '{"jsonrpc":"1.0","id":52,"method":"tools/list"}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "malformed JSON returns parse error" "true" \
+  "$(echo "$MCP17_PARSE" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32700' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "non-object JSON returns invalid request" "true" \
+  "$(echo "$MCP17_INVALID" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "empty object returns invalid request" "true" \
+  "$(echo "$MCP17_EMPTY_OBJECT" | jq -e '.jsonrpc == "2.0" and .id == null and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "missing method returns invalid request" "true" \
+  "$(echo "$MCP17_MISSING_METHOD" | jq -e '.jsonrpc == "2.0" and .id == 50 and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "non-string method returns invalid request" "true" \
+  "$(echo "$MCP17_BAD_METHOD" | jq -e '.jsonrpc == "2.0" and .id == 51 and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "wrong jsonrpc version returns invalid request" "true" \
+  "$(echo "$MCP17_BAD_VERSION" | jq -e '.jsonrpc == "2.0" and .id == 52 and .error.code == -32600' >/dev/null 2>&1 && echo true || echo false)"
+
+# ── Test 18: MCP does not respond to JSON-RPC notifications ──────────────────
+echo ""
+echo "Test 18: MCP does not respond to JSON-RPC notifications"
+MCP18_NOTIFY=$(printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","method":"tools/list","params":{}}' \
+  '{"jsonrpc":"2.0","method":"resources/list","params":{}}' \
+  '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"kg_status","arguments":{}}}' \
+  | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "known-method notifications produce no stdout" "" "$MCP18_NOTIFY"
+
+# ── Test 19: MCP validates tools/call params shape ───────────────────────────
+echo ""
+echo "Test 19: MCP validates tools/call params shape"
+MCP18_ARRAY=$(printf '{"jsonrpc":"2.0","id":18,"method":"tools/call","params":[]}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP18_MISSING=$(printf '{"jsonrpc":"2.0","id":19,"method":"tools/call"}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "tools/call array params returns invalid params" "true" \
+  "$(echo "$MCP18_ARRAY" | jq -e '.jsonrpc == "2.0" and .id == 18 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "tools/call missing params returns invalid params" "true" \
+  "$(echo "$MCP18_MISSING" | jq -e '.jsonrpc == "2.0" and .id == 19 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+
+# ── Test 20: MCP validates resources/read params shape ───────────────────────
+echo ""
+echo "Test 20: MCP validates resources/read params shape"
+MCP19_ARRAY=$(printf '{"jsonrpc":"2.0","id":20,"method":"resources/read","params":[]}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP19_MISSING=$(printf '{"jsonrpc":"2.0","id":21,"method":"resources/read"}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP19_BAD_URI=$(printf '{"jsonrpc":"2.0","id":22,"method":"resources/read","params":{"uri":123}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "resources/read array params returns invalid params" "true" \
+  "$(echo "$MCP19_ARRAY" | jq -e '.jsonrpc == "2.0" and .id == 20 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "resources/read missing params returns invalid params" "true" \
+  "$(echo "$MCP19_MISSING" | jq -e '.jsonrpc == "2.0" and .id == 21 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "resources/read non-string uri returns invalid params" "true" \
+  "$(echo "$MCP19_BAD_URI" | jq -e '.jsonrpc == "2.0" and .id == 22 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+
+# ── Test 21: MCP confines resource paths to project root ─────────────────────
+echo ""
+echo "Test 21: MCP confines resource paths to project root"
+TMPDIR9=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9"' EXIT
+PROJECT9="$TMPDIR9/project"
+OUTSIDE9="$TMPDIR9/outside"
+export CLAUDE_PROJECT_DIR="$PROJECT9"
+mkdir -p "$PROJECT9/.knowledge-graph" "$PROJECT9/src" "$OUTSIDE9"
+printf '# project root\n' > "$PROJECT9/CLAUDE.md"
+printf '# source node\n' > "$PROJECT9/src/CLAUDE.md"
+printf '# outside leak\n' > "$OUTSIDE9/CLAUDE.md"
+MCP20_TOOL=$(printf '{"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"kg_read_node","arguments":{"module_path":"../outside"}}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+MCP20_RESOURCE=$(printf '{"jsonrpc":"2.0","id":24,"method":"resources/read","params":{"uri":"kg://claude/../outside"}}\n' | bash "$SCRIPT_DIR/mcp-server.sh" 2>/dev/null || true)
+assert_eq "kg_read_node rejects path traversal" "true" \
+  "$(echo "$MCP20_TOOL" | jq -e '.jsonrpc == "2.0" and .id == 23 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "resources/read rejects path traversal" "true" \
+  "$(echo "$MCP20_RESOURCE" | jq -e '.jsonrpc == "2.0" and .id == 24 and .error.code == -32602' >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "path traversal does not leak outside node content" "true" \
+  "$(printf '%s\n%s\n' "$MCP20_TOOL" "$MCP20_RESOURCE" | grep -q 'outside leak' && echo false || echo true)"
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# ── Test 22: installer stays project-level only for Codex/MCP ────────────────
+echo ""
+echo "Test 22: installer stays project-level only for Codex/MCP"
+TMPDIR10=$(mktemp -d)
+trap 'rm -rf "$TMPDIR" "$TMPDIR2" "$TMPDIR3" "$TMPDIR4" "$TMPDIR5" "$TMPDIR6" "$TMPDIR7" "$TMPDIR8" "$TMPDIR9" "$TMPDIR10"' EXIT
+TARGET8="$TMPDIR10/project"
+HOME8="$TMPDIR10/home"
+FAKEBIN8="$TMPDIR10/bin"
+CODEX_LOG8="$TMPDIR10/codex.log"
+CODEX_CONFIG8="$HOME8/.codex/config.toml"
+mkdir -p "$TARGET8" "$FAKEBIN8" "$(dirname "$CODEX_CONFIG8")"
+cat > "$CODEX_CONFIG8" <<EOF
+[mcp_servers.knowledge-graph]
+command = "bash"
+args = ["/old/project/.claude/skills/knowledge-graph/scripts/mcp-server.sh"]
+
+[mcp_servers.knowledge-graph.env]
+KG_PROJECT_DIR = "/old/project"
+EOF
+cat > "$FAKEBIN8/codex" <<'SH'
+#!/bin/bash
+printf '%s\n' "$*" >> "$CODEX_TEST_LOG"
+case "$*" in
+  "mcp get knowledge-graph") exit 1 ;;
+  "mcp remove knowledge-graph") exit 0 ;;
+  mcp\ add\ knowledge-graph*) exit 0 ;;
+  mcp*) exit 0 ;;
+esac
+exit 0
+SH
+chmod +x "$FAKEBIN8/codex"
+CODEX_TEST_LOG="$CODEX_LOG8" HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8" >/dev/null 2>&1
+assert_eq "installer does NOT call user-level codex mcp" "true" \
+  "$([ ! -s "$CODEX_LOG8" ] && echo true || echo false)"
+assert_eq "codex user config stays unchanged" "true" \
+  "$(grep -q '/old/project/.claude/skills/knowledge-graph/scripts/mcp-server.sh' "$CODEX_CONFIG8" 2>/dev/null && echo true || echo false)"
+assert_eq "codex user config does NOT point at installed server" "true" \
+  "$(grep -q "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" "$CODEX_CONFIG8" 2>/dev/null && echo false || echo true)"
+assert_eq "project .mcp.json has startup timeout" "true" \
+  "$(jq -e '.mcpServers["knowledge-graph"].startup_timeout_sec == 60' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "project .mcp.json has tool timeout" "true" \
+  "$(jq -e '.mcpServers["knowledge-graph"].tool_timeout_sec == 20' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "project .mcp.json points at installed server" "true" \
+  "$(jq -e --arg p "$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.mcpServers["knowledge-graph"].args == [$p]' "$TARGET8/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+assert_eq "project .codex config has managed MCP block" "true" \
+  "$(grep -qF '# knowledge-graph:codex-mcp begin' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config has startup timeout" "true" \
+  "$(grep -qF 'startup_timeout_sec = 60' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config has tool timeout" "true" \
+  "$(grep -qF 'tool_timeout_sec = 20' "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config points at installed server" "true" \
+  "$(grep -qF "args = [\"$TARGET8/.claude/skills/knowledge-graph/scripts/mcp-server.sh\"]" "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "project .codex config sets KG_PROJECT_DIR" "true" \
+  "$(grep -qF "KG_PROJECT_DIR = \"$TARGET8\"" "$TARGET8/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "gitignore excludes generated project codex config" "true" \
+  "$(grep -qxF '.codex/config.toml' "$TARGET8/.gitignore" 2>/dev/null && echo true || echo false)"
+TARGET8_CODEX_EXISTING="$TMPDIR10/project-codex-existing"
+mkdir -p "$TARGET8_CODEX_EXISTING/.codex"
+printf 'model = "gpt-5.4"\n' > "$TARGET8_CODEX_EXISTING/.codex/config.toml"
+HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_CODEX_EXISTING" >/dev/null 2>&1
+assert_eq "installer preserves existing project codex config" "true" \
+  "$(grep -qF 'model = "gpt-5.4"' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+CODEX_MCP_STARTUP_TIMEOUT_SEC=75 CODEX_MCP_TOOL_TIMEOUT_SEC=35 HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_CODEX_EXISTING" >/dev/null 2>&1
+assert_eq "installer replaces managed project codex block" "1" \
+  "$(grep -cF '# knowledge-graph:codex-mcp begin' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null || echo 0)"
+assert_eq "installer updates project codex startup timeout" "true" \
+  "$(grep -qF 'startup_timeout_sec = 75' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+assert_eq "installer updates project codex tool timeout" "true" \
+  "$(grep -qF 'tool_timeout_sec = 35' "$TARGET8_CODEX_EXISTING/.codex/config.toml" 2>/dev/null && echo true || echo false)"
+TARGET8_EXISTING="$TMPDIR10/project-existing"
+mkdir -p "$TARGET8_EXISTING"
+printf '{"mcpServers": null, "preserve": "yes"}\n' > "$TARGET8_EXISTING/.mcp.json"
+HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_EXISTING" >/dev/null 2>&1
+assert_eq "installer normalizes missing mcpServers object" "true" \
+  "$(jq -e --arg p "$TARGET8_EXISTING/.claude/skills/knowledge-graph/scripts/mcp-server.sh" '.preserve == "yes" and .mcpServers["knowledge-graph"].args == [$p] and .mcpServers["knowledge-graph"].startup_timeout_sec == 60 and .mcpServers["knowledge-graph"].tool_timeout_sec == 20' "$TARGET8_EXISTING/.mcp.json" >/dev/null 2>&1 && echo true || echo false)"
+TARGET8_BAD_SHAPE="$TMPDIR10/project-bad-shape"
+mkdir -p "$TARGET8_BAD_SHAPE"
+printf '{"mcpServers":[]}\n' > "$TARGET8_BAD_SHAPE/.mcp.json"
+BAD_SHAPE_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_BAD_SHAPE" 2>&1 || true)
+assert_eq "installer rejects non-object mcpServers clearly" "true" \
+  "$(echo "$BAD_SHAPE_OUT" | grep -q 'mcpServers 必须是 object' && echo true || echo false)"
+assert_eq "installer preserves invalid-shaped .mcp.json" '{"mcpServers":[]}' \
+  "$(tr -d '\n' < "$TARGET8_BAD_SHAPE/.mcp.json")"
+TARGET8_BAD_JSON="$TMPDIR10/project-bad-json"
+mkdir -p "$TARGET8_BAD_JSON"
+printf '{"mcpServers":\n' > "$TARGET8_BAD_JSON/.mcp.json"
+BAD_JSON_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$TARGET8_BAD_JSON" 2>&1 || true)
+assert_eq "installer rejects malformed .mcp.json clearly" "true" \
+  "$(echo "$BAD_JSON_OUT" | grep -q '.mcp.json 必须是 JSON object' && echo true || echo false)"
+assert_eq "installer preserves malformed .mcp.json" '{"mcpServers":' \
+  "$(tr -d '\n' < "$TARGET8_BAD_JSON/.mcp.json")"
+HOME_INSTALL_OUT=$(HOME="$HOME8" PATH="$FAKEBIN8:$PATH" bash "$REPO_ROOT/standalone/install.sh" "$HOME8" 2>&1 || true)
+assert_eq "installer rejects HOME as target" "true" \
+  "$(echo "$HOME_INSTALL_OUT" | grep -q '不能安装到 HOME 目录' && echo true || echo false)"
+assert_eq "PowerShell installer validates project .mcp.json shape" "true" \
+  "$(rg -q 'function Read-ProjectMcpJson' "$REPO_ROOT/standalone/install.ps1" && rg -q 'mcpServers must be an object' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
+assert_eq "PowerShell installer preserves invalid .mcp.json" "true" \
+  "$(rg -q 'Preserving existing .mcp.json unchanged' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
+assert_eq "PowerShell installer supports tool timeout" "true" \
+  "$(rg -q 'CODEX_MCP_TOOL_TIMEOUT_SEC' "$REPO_ROOT/standalone/install.ps1" && rg -q 'tool_timeout_sec' "$REPO_ROOT/standalone/install.ps1" && echo true || echo false)"
+
+# ── Test 23: standalone/source script parity ─────────────────────────────────
+echo ""
+echo "Test 23: standalone/source script parity"
 for script in analyze.sh context.sh guard.sh infer.sh mcp-server.sh prompt-trigger.sh track.sh; do
   assert_true "standalone matches $script" "cmp -s \"$REPO_ROOT/skills/knowledge-graph/scripts/$script\" \"$REPO_ROOT/standalone/skills/knowledge-graph/scripts/$script\""
 done

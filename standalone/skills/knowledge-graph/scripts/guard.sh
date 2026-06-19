@@ -1,7 +1,7 @@
 #!/bin/bash
 # guard.sh — shared env guard + helpers for all kg hook scripts
 resolve_project_dir() {
-  local project="${CLAUDE_PROJECT_DIR:-${KG_PROJECT_DIR:-}}"
+  local project="${KG_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
   if [ -z "$project" ]; then
     local d
     d="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -24,6 +24,10 @@ CLAUDE_PROJECT_DIR="$(resolve_project_dir)"
 [ "$CLAUDE_PROJECT_DIR" = "$HOME" ] && exit 0
 [ "$CLAUDE_PROJECT_DIR" = "/" ] && exit 0
 export CLAUDE_PROJECT_DIR
+if [ -n "${KG_PROJECT_DIR:-}" ]; then
+  KG_PROJECT_DIR="$CLAUDE_PROJECT_DIR"
+  export KG_PROJECT_DIR
+fi
 
 KG_DATA="$CLAUDE_PROJECT_DIR/.knowledge-graph"
 [ -d "$KG_DATA" ] || mkdir -p "$KG_DATA"
@@ -128,9 +132,35 @@ tlb_invalidate() {
 }
 
 # ── Shared: knowledge node helpers ───────────────────────────────────────────
+is_safe_rel_path() {
+  local rel="$1" part old_ifs
+  [ -n "$rel" ] || return 1
+  if [ "$rel" = "." ] || [ "$rel" = "root" ]; then
+    return 0
+  fi
+  case "$rel" in
+    /*) return 1 ;;
+  esac
+  old_ifs="$IFS"
+  IFS='/'
+  for part in $rel; do
+    if [ "$part" = ".." ]; then
+      IFS="$old_ifs"
+      return 1
+    fi
+  done
+  IFS="$old_ifs"
+  return 0
+}
+
 knowledge_node_path() {
   local dir="$1" base
-  [ "$dir" = "." ] && base="$CLAUDE_PROJECT_DIR" || base="$CLAUDE_PROJECT_DIR/$dir"
+  if [ "$dir" = "." ] || [ "$dir" = "root" ]; then
+    base="$CLAUDE_PROJECT_DIR"
+  else
+    is_safe_rel_path "$dir" || return 1
+    base="$CLAUDE_PROJECT_DIR/$dir"
+  fi
   [ -f "$base/CLAUDE.md" ] && { printf '%s\n' "$base/CLAUDE.md"; return 0; }
   [ -f "$base/SKILL.md" ] && { printf '%s\n' "$base/SKILL.md"; return 0; }
   return 1
@@ -141,9 +171,15 @@ has_knowledge_node() {
 }
 
 find_knowledge_nodes() {
-  find "$CLAUDE_PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-    -not -path "*/.git/*" -not -path "*/node_modules/*" \
-    -not -path "*/.knowledge-graph/*" 2>/dev/null
+  find "$CLAUDE_PROJECT_DIR" \
+    \( -type d \( \
+      -name ".git" -o -name ".hg" -o -name ".svn" -o \
+      -name ".claude" -o -name ".knowledge-graph" -o \
+      -name ".worktrees" -o -name ".cache" -o -name ".next" -o \
+      -name "node_modules" -o -name "vendor" -o \
+      -name "dist" -o -name "build" -o -name "coverage" \
+    \) -prune \) -o \
+    \( -type f \( -name "CLAUDE.md" -o -name "SKILL.md" \) -print \) 2>/dev/null
 }
 
 # ── Shared: extract prohibitions from a knowledge node ───────────────────────

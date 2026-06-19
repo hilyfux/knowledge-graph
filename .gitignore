@@ -9,3 +9,4 @@ standalone/skills/knowledge-graph/data/
 .mcp.json
 .playwright-mcp/
 .playwright/
+.codex/config.toml

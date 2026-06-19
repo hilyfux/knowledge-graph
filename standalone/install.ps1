@@ -6,7 +6,7 @@
 .DESCRIPTION
     Copies the knowledge-graph skill to .claude/skills/knowledge-graph/,
     merges hooks into .claude/settings.json, and registers the MCP server
-    in .mcp.json.
+    in project .codex/config.toml and .mcp.json.
 
     Runtime requires bash + jq. On Windows that typically means Git Bash
     (which ships bash.exe on the PATH) plus jq installed via winget or
@@ -32,6 +32,72 @@ $ErrorActionPreference = 'Stop'
 function Info  { param([string]$m) Write-Host "[kg] $m" -ForegroundColor Green }
 function Warn  { param([string]$m) Write-Host "[kg] $m" -ForegroundColor Yellow }
 function Fail  { param([string]$m) Write-Host "[kg] $m" -ForegroundColor Red; exit 1 }
+
+function ConvertTo-TomlString {
+    param([string]$Value)
+    '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'
+}
+
+function Set-ManagedCodexMcpBlock {
+    param(
+        [string]$ConfigPath,
+        [string]$Block,
+        [string]$Begin,
+        [string]$End
+    )
+    $dir = Split-Path $ConfigPath -Parent
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    if (Test-Path $ConfigPath) {
+        $text = Get-Content -Raw $ConfigPath
+        $hasBegin = $text.Contains($Begin)
+        $hasEnd = $text.Contains($End)
+        if ($hasBegin -ne $hasEnd) {
+            Fail "Incomplete Knowledge Graph managed block in $ConfigPath"
+        }
+        if (-not $hasBegin -and $text -match '(?m)^\[mcp_servers\.knowledge-graph(\.|\])') {
+            Fail "Unmanaged knowledge-graph MCP config already exists in $ConfigPath; remove that table and reinstall"
+        }
+        if ($hasBegin) {
+            $pattern = [regex]::Escape($Begin) + '[\s\S]*?' + [regex]::Escape($End)
+            $text = [regex]::Replace($text, $pattern, { param($m) $Block.Trim() }, 1)
+        } elseif ($text.Trim()) {
+            $text = $text.TrimEnd() + "`n`n" + $Block.Trim() + "`n"
+        } else {
+            $text = $Block.Trim() + "`n"
+        }
+    } else {
+        $text = $Block.Trim() + "`n"
+    }
+    Set-Content -Path $ConfigPath -Value $text -Encoding UTF8
+}
+
+function Read-ProjectMcpJson {
+    param([string]$McpJson)
+    try {
+        $doc = Get-Content -Raw $McpJson | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Fail ".mcp.json must be a JSON object and mcpServers must be an object: $McpJson. Preserving existing .mcp.json unchanged."
+    }
+    if ($null -eq $doc -or $doc -isnot [System.Management.Automation.PSCustomObject]) {
+        Fail ".mcp.json must be a JSON object and mcpServers must be an object: $McpJson. Preserving existing .mcp.json unchanged."
+    }
+    $mcpServersProp = $doc.PSObject.Properties['mcpServers']
+    if ($mcpServersProp -and $null -ne $mcpServersProp.Value -and
+        $mcpServersProp.Value -isnot [System.Management.Automation.PSCustomObject]) {
+        Fail ".mcp.json must be a JSON object and mcpServers must be an object: $McpJson. Preserving existing .mcp.json unchanged."
+    }
+    $doc
+}
+
+function Ensure-McpServersObject {
+    param([System.Management.Automation.PSCustomObject]$Doc)
+    $mcpServersProp = $Doc.PSObject.Properties['mcpServers']
+    if (-not $mcpServersProp) {
+        $Doc | Add-Member -NotePropertyName 'mcpServers' -NotePropertyValue ([PSCustomObject]@{}) -Force
+    } elseif ($null -eq $mcpServersProp.Value) {
+        $Doc.mcpServers = [PSCustomObject]@{}
+    }
+}
 
 # ── Preflight: bash + jq must be on PATH ─────────────────────────────────────
 $bash = Get-Command bash -ErrorAction SilentlyContinue
@@ -68,6 +134,11 @@ if ($TargetPath -eq [System.IO.Path]::GetPathRoot($TargetPath)) {
 }
 if (-not (Test-Path $TargetPath -PathType Container)) {
     Fail "Target does not exist or is not a directory: $TargetPath"
+}
+
+$mcpJson = Join-Path $TargetPath '.mcp.json'
+if (Test-Path $mcpJson) {
+    [void](Read-ProjectMcpJson -McpJson $mcpJson)
 }
 
 $InstallDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -252,7 +323,8 @@ $agentsBlock = @"
 $agentsBegin
 ## Knowledge Graph
 
-- Use the bundled MCP server in .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- Use the bundled project-level MCP server from .codex/config.toml or .mcp.json when available: start with kg_status, then kg_query or kg_read_node before editing unfamiliar modules.
+- Do not install Knowledge Graph as a user-level Codex MCP server; this project is registered only through project-level config.
 - Durable module knowledge lives in canonical CLAUDE.md and SKILL.md files. AGENTS.md is only the Codex adapter that tells Codex to read those canonical nodes through MCP.
 - Runtime data lives under .knowledge-graph/ and should stay uncommitted.
 - If running scripts outside Claude Code, set KG_PROJECT_DIR to this project root; Claude Code may set CLAUDE_PROJECT_DIR instead.
@@ -275,34 +347,64 @@ if (Test-Path $agentsPath) {
 Info 'Updated AGENTS.md with Codex Knowledge Graph notes'
 
 # ── Register MCP server in .mcp.json ─────────────────────────────────────────
-$mcpJson       = Join-Path $TargetPath '.mcp.json'
 # Use forward slashes in the args path so the JSON stays sane across shells
 $mcpServerPath = ($SkillDst -replace '\\', '/') + '/scripts/mcp-server.sh'
 $mcpEnv = [PSCustomObject]@{ KG_PROJECT_DIR = $TargetPath }
+$codexMcpStartupTimeoutSec = 60
+$codexMcpToolTimeoutSec = 20
+if ($env:CODEX_MCP_STARTUP_TIMEOUT_SEC) {
+    [int]$parsedTimeout = 0
+    if ([int]::TryParse($env:CODEX_MCP_STARTUP_TIMEOUT_SEC, [ref]$parsedTimeout) -and $parsedTimeout -gt 0) {
+        $codexMcpStartupTimeoutSec = $parsedTimeout
+    } else {
+        Warn 'CODEX_MCP_STARTUP_TIMEOUT_SEC is invalid; using default 60'
+    }
+}
+if ($env:CODEX_MCP_TOOL_TIMEOUT_SEC) {
+    [int]$parsedTimeout = 0
+    if ([int]::TryParse($env:CODEX_MCP_TOOL_TIMEOUT_SEC, [ref]$parsedTimeout) -and $parsedTimeout -gt 0) {
+        $codexMcpToolTimeoutSec = $parsedTimeout
+    } else {
+        Warn 'CODEX_MCP_TOOL_TIMEOUT_SEC is invalid; using default 20'
+    }
+}
 
 if (Test-Path $mcpJson) {
-    $existing = Get-Content -Raw $mcpJson | ConvertFrom-Json
-    if (-not $existing.mcpServers) {
-        $existing | Add-Member -NotePropertyName 'mcpServers' -NotePropertyValue (New-Object PSObject) -Force
-    }
+    $existing = Read-ProjectMcpJson -McpJson $mcpJson
+    Ensure-McpServersObject -Doc $existing
     if (-not $existing.mcpServers.'knowledge-graph') {
         $kgMcp = [PSCustomObject]@{
             type    = 'stdio'
             command = 'bash'
             args    = @($mcpServerPath)
             env     = $mcpEnv
+            startup_timeout_sec = $codexMcpStartupTimeoutSec
+            tool_timeout_sec = $codexMcpToolTimeoutSec
         }
         $existing.mcpServers | Add-Member -NotePropertyName 'knowledge-graph' -NotePropertyValue $kgMcp -Force
         $existing | ConvertTo-Json -Depth 10 | Set-Content -Path $mcpJson -Encoding UTF8
         Info 'Registered knowledge-graph MCP server in .mcp.json'
     } else {
+        $existing.mcpServers.'knowledge-graph'.type = 'stdio'
+        $existing.mcpServers.'knowledge-graph'.command = 'bash'
+        $existing.mcpServers.'knowledge-graph'.args = @($mcpServerPath)
+        if ($existing.mcpServers.'knowledge-graph'.PSObject.Properties['startup_timeout_sec']) {
+            $existing.mcpServers.'knowledge-graph'.startup_timeout_sec = $codexMcpStartupTimeoutSec
+        } else {
+            $existing.mcpServers.'knowledge-graph' | Add-Member -NotePropertyName 'startup_timeout_sec' -NotePropertyValue $codexMcpStartupTimeoutSec -Force
+        }
+        if ($existing.mcpServers.'knowledge-graph'.PSObject.Properties['tool_timeout_sec']) {
+            $existing.mcpServers.'knowledge-graph'.tool_timeout_sec = $codexMcpToolTimeoutSec
+        } else {
+            $existing.mcpServers.'knowledge-graph' | Add-Member -NotePropertyName 'tool_timeout_sec' -NotePropertyValue $codexMcpToolTimeoutSec -Force
+        }
         if ($existing.mcpServers.'knowledge-graph'.PSObject.Properties['env']) {
             $existing.mcpServers.'knowledge-graph'.env = $mcpEnv
         } else {
             $existing.mcpServers.'knowledge-graph' | Add-Member -NotePropertyName 'env' -NotePropertyValue $mcpEnv -Force
         }
         $existing | ConvertTo-Json -Depth 10 | Set-Content -Path $mcpJson -Encoding UTF8
-        Info 'Updated KG_PROJECT_DIR for knowledge-graph MCP server'
+        Info 'Updated knowledge-graph MCP server in .mcp.json'
     }
 } else {
     $obj = [PSCustomObject]@{
@@ -312,12 +414,38 @@ if (Test-Path $mcpJson) {
                 command = 'bash'
                 args    = @($mcpServerPath)
                 env     = $mcpEnv
+                startup_timeout_sec = $codexMcpStartupTimeoutSec
+                tool_timeout_sec = $codexMcpToolTimeoutSec
             }
         }
     }
     $obj | ConvertTo-Json -Depth 10 | Set-Content -Path $mcpJson -Encoding UTF8
     Info 'Created .mcp.json and registered knowledge-graph MCP server'
 }
+
+$codexConfig = Join-Path $TargetPath '.codex\config.toml'
+$codexMcpBegin = '# knowledge-graph:codex-mcp begin'
+$codexMcpEnd = '# knowledge-graph:codex-mcp end'
+$mcpCommandToml = ConvertTo-TomlString 'bash'
+$mcpServerToml = ConvertTo-TomlString $mcpServerPath
+$projectToml = ConvertTo-TomlString $TargetPath
+$codexBlock = @"
+$codexMcpBegin
+# Managed by Knowledge Graph installer. Project-level only; no user config writes.
+[mcp_servers.knowledge-graph]
+command = $mcpCommandToml
+args = [$mcpServerToml]
+startup_timeout_sec = $codexMcpStartupTimeoutSec
+tool_timeout_sec = $codexMcpToolTimeoutSec
+
+[mcp_servers.knowledge-graph.env]
+KG_PROJECT_DIR = $projectToml
+$codexMcpEnd
+"@
+Set-ManagedCodexMcpBlock -ConfigPath $codexConfig -Block $codexBlock -Begin $codexMcpBegin -End $codexMcpEnd
+Info 'Registered knowledge-graph MCP server in project .codex/config.toml'
+
+Info 'Project-level install only: user-level Codex MCP config was not changed'
 
 # ── Update .gitignore ────────────────────────────────────────────────────────
 $gitignore = Join-Path $TargetPath '.gitignore'
@@ -327,9 +455,13 @@ if (Test-Path $gitignore) {
         Add-Content -Path $gitignore -Value '.knowledge-graph/' -Encoding UTF8
         Info 'Appended .knowledge-graph/ to .gitignore'
     }
+    if ($gi -notcontains '.codex/config.toml') {
+        Add-Content -Path $gitignore -Value '.codex/config.toml' -Encoding UTF8
+        Info 'Appended .codex/config.toml to .gitignore'
+    }
 } else {
-    Set-Content -Path $gitignore -Value '.knowledge-graph/' -Encoding UTF8
-    Info 'Created .gitignore with .knowledge-graph/'
+    Set-Content -Path $gitignore -Value ".knowledge-graph/`n.codex/config.toml" -Encoding UTF8
+    Info 'Created .gitignore with Knowledge Graph local paths'
 }
 
 # ── Summary ──────────────────────────────────────────────────────────────────
@@ -340,6 +472,6 @@ Write-Host "  Installed to: $SkillDst"
 Write-Host ''
 Write-Host '  Next steps:'
 Write-Host '  1. Restart Claude Code (so hooks activate)'
-Write-Host '  2. In Codex/MCP clients, read AGENTS.md and connect the knowledge-graph server from .mcp.json'
+Write-Host '  2. Use project .codex/config.toml from Codex CLI; other MCP clients can use project .mcp.json'
 Write-Host '  3. Run /knowledge-graph init to bootstrap'
 Write-Host ''

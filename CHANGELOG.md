@@ -6,6 +6,142 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+### Changed — Project MCP installs set tool timeout
+
+`standalone/install.sh` and `standalone/install.ps1` now write
+`tool_timeout_sec = 20` alongside `startup_timeout_sec = 60` in project MCP
+config. Set `CODEX_MCP_TOOL_TIMEOUT_SEC` before install to override the
+project-level tool timeout without creating user-level Codex config.
+
+### Changed — MCP query output is capped and literal
+
+`kg_query` now advertises and enforces a maximum result limit of 20, keeping
+Codex/MCP tool output bounded even when a client asks for an oversized limit.
+Query text is also treated as a literal string instead of a regex, so terms
+containing characters like `[` search accurately instead of failing through
+grep pattern parsing.
+
+### Fixed — PowerShell installer preserves invalid project MCP JSON
+
+`standalone/install.ps1` now validates an existing project `.mcp.json` before
+install side effects, matching the bash installer behavior. Malformed JSON or a
+non-object `mcpServers` value fails clearly and leaves the existing file
+unchanged.
+
+### Fixed — Codex project env wins over stale Claude env
+
+MCP and shared helper scripts now prefer `KG_PROJECT_DIR` over
+`CLAUDE_PROJECT_DIR` when both are present. This keeps Codex project-level MCP
+config authoritative even if a shell or parent process carries a stale Claude
+project env.
+
+### Changed — MCP initialize guides Codex toward low-cost context use
+
+`mcp-server.sh` now returns concise MCP `instructions` during initialization.
+Codex can use this server-wide guidance to call `kg_status` first, query/read
+canonical nodes before unfamiliar edits, use prediction for related modules,
+and avoid committing `.knowledge-graph/` runtime data.
+
+### Fixed — Codex MCP timeout is written to project config.toml
+
+`standalone/install.sh` now writes a managed Knowledge Graph MCP block to
+project `.codex/config.toml` as well as `.mcp.json`. This matches Codex CLI's
+project-scoped MCP config surface, keeps `startup_timeout_sec = 60`, preserves
+existing project config, replaces the managed block on reinstall, and still
+never writes user-level Codex config.
+
+### Fixed — Installer validates existing project MCP JSON before writing
+
+`standalone/install.sh` now checks an existing project `.mcp.json` before any
+install side effects. Missing or `null` `mcpServers` is normalized to an object,
+while malformed JSON or non-object `mcpServers` is rejected with a clear error
+and the existing file is left untouched.
+
+### Changed — MCP resource scans skip runtime and generated directories
+
+`mcp-server.sh` now prunes `.claude`, `.knowledge-graph`, `.worktrees`,
+dependency directories, build outputs, and common caches when listing or
+querying canonical `CLAUDE.md` / `SKILL.md` nodes. This keeps Codex/MCP results
+focused on durable project knowledge and avoids wasting time on runtime copies
+or generated files.
+
+### Changed — Shared knowledge-node scans skip runtime and generated directories
+
+`guard.sh` now uses the same pruning rules as the MCP server for shared
+knowledge-node scans. Claude hook paths such as decay checks and index builds no
+longer traverse `.claude`, `.worktrees`, dependency directories, build outputs,
+or common caches.
+
+### Fixed — Shared knowledge-node lookups stay inside the project
+
+`guard.sh knowledge_node_path` now rejects absolute paths and `..` segments.
+Claude hook paths that resolve canonical `CLAUDE.md` / `SKILL.md` files cannot
+read sibling projects or parent-directory knowledge nodes.
+
+### Changed — Predict inference uses fewer subprocesses
+
+`infer.sh predict` now parses recent event lines with a single raw-input jq pass
+instead of `jq | jq`, preserving corrupt-line tolerance while reducing hook
+latency for Codex/Claude prediction calls.
+
+### Changed — Predict performance checks avoid timer overhead
+
+`infer.sh predict` now derives the target directory without `sed` or `xargs`,
+and the pipeline uses lightweight millisecond timing before falling back to
+Python. This keeps the performance gate focused on inference work instead of
+test harness startup overhead.
+
+### Fixed — MCP JSON-RPC responses preserve string ids
+
+`mcp-server.sh` now keeps JSON-RPC request ids as JSON values instead of
+stringifying them into bare tokens. MCP clients that send string ids now receive
+valid JSON responses with the same id, improving compatibility across Codex and
+other MCP clients.
+
+### Fixed — MCP returns standard errors for invalid JSON-RPC input
+
+Malformed JSON now returns `-32700` parse errors, and valid non-object JSON now
+returns `-32600` invalid-request errors. This gives MCP clients explicit
+failure signals instead of silent no-response behavior.
+
+### Fixed — MCP validates tools/call params before dispatch
+
+`tools/call` now returns `-32602` invalid-params errors when `params` is missing,
+not an object, lacks a string `name`, or provides non-object `arguments`. This
+prevents malformed client calls from crashing the stdio server.
+
+### Fixed — MCP validates resources/read params before dispatch
+
+`resources/read` now returns `-32602` invalid-params errors when `params` is
+missing, not an object, or `uri` is not a non-empty string. This prevents
+malformed MCP resource reads from crashing the stdio server.
+
+### Fixed — MCP resource reads are confined to the project root
+
+`kg_read_node` and `resources/read` now reject path traversal in module paths
+and resource URIs. MCP clients cannot use `..` segments to read adjacent
+projects or parent-directory `CLAUDE.md` / `SKILL.md` files.
+
+### Fixed — MCP notifications do not emit responses
+
+Known JSON-RPC methods without an `id` are now treated as notifications and do
+not write response objects to stdout. This avoids polluting MCP stdio streams
+when clients send fire-and-forget protocol messages.
+
+### Fixed — MCP validates JSON-RPC request envelopes
+
+Requests must now declare `jsonrpc: "2.0"` and a non-empty string `method`.
+Empty objects, missing methods, non-string methods, and wrong JSON-RPC versions
+return `-32600` invalid-request errors instead of being ignored, misrouted, or
+treated as unknown methods.
+
+### Fixed — Codex MCP registration is project-level only
+
+The installer no longer calls `codex mcp add` or writes user-level Codex config.
+It only updates project-level config, keeps `KG_PROJECT_DIR` current, and sets
+`startup_timeout_sec = 60` by default. The timeout can be overridden with
+`CODEX_MCP_STARTUP_TIMEOUT_SEC`.
+
 ### Fixed — Auto-update no longer blocks its own knowledge-node writes
 
 The PreToolUse(Write) guard used to block every write into a module that lacked a knowledge node — including the write that *created* `CLAUDE.md`. When the skill ran update mode, its own node-creation write was blocked by the very condition it was trying to resolve. Writes to `CLAUDE.md` / `SKILL.md` / `AGENTS.md` are now exempt.

@@ -14,6 +14,7 @@ After installation, the relevant files live under:
         ├── SKILL.md
         └── scripts/
 .knowledge-graph/
+.codex/config.toml
 .mcp.json
 AGENTS.md
 ```
@@ -31,7 +32,7 @@ The system relies on these hook moments:
 - `SubagentStart` for propagating constraints into sub-agents
 - `Stop` for pre-analysis when enough events have accumulated
 
-If hooks appear missing, rerun the installer and restart Claude Code. Codex does not use these Claude Code hooks; it consumes the same knowledge through `.mcp.json` and the MCP server.
+If hooks appear missing, rerun the installer and restart Claude Code. Codex does not use these Claude Code hooks; it consumes the same knowledge through the MCP server. The installer writes project `.codex/config.toml` for Codex CLI and project `.mcp.json` for other MCP-aware clients. It does not create user-level Codex MCP registrations.
 
 ## Runtime data
 
@@ -100,7 +101,7 @@ These defaults aim to keep overhead low while still capturing evolving project c
 
 Knowledge index is included in `.claude/CLAUDE.md` via `@include` directive, making it part of the Claude Code system prompt. This survives both `clear` and `compact` natively.
 
-Codex reads persistent project guidance from `AGENTS.md`. The installer adds a marked Knowledge Graph section that points Codex to `.mcp.json`, `kg_status`, `kg_query`, `kg_read_node`, and `KG_PROJECT_DIR`.
+Codex reads persistent project guidance from `AGENTS.md`. The installer adds a marked Knowledge Graph section that points Codex to project MCP config, `kg_status`, `kg_query`, `kg_read_node`, and `KG_PROJECT_DIR`.
 
 A `PreCompact` hook guides the compactor to preserve prohibitions and error patterns during context compression.
 
@@ -127,7 +128,8 @@ This is the easiest way to refresh scripts and hook wiring without manually edit
 
 - `jq` is installed and available in `PATH`
 - `.claude/settings.json` includes Knowledge Graph hooks
-- `.mcp.json` includes the `knowledge-graph` MCP server with `KG_PROJECT_DIR`
+- `.codex/config.toml` includes the project-level `knowledge-graph` MCP server for Codex CLI with `KG_PROJECT_DIR`, `startup_timeout_sec`, and `tool_timeout_sec`
+- `.mcp.json` includes the project-level `knowledge-graph` MCP server for other MCP clients with `KG_PROJECT_DIR`, `startup_timeout_sec`, and `tool_timeout_sec`
 - `AGENTS.md` includes the marked Knowledge Graph section for Codex
 - Claude Code has been restarted after install or reinstall
 - the target project is writable

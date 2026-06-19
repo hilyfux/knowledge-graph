@@ -21,6 +21,9 @@ case "$CMD" in
     > "$WS_WRITE_SET" 2>/dev/null
     > "$PRED_CACHE" 2>/dev/null
     rm -f "$KG_DATA/.trigger-checked" "$KG_DATA/.update-triggered" 2>/dev/null
+    # Recurring write-counter trigger: clear at session start so the new
+    # session counts from zero (avoids replaying a stale .update-pending).
+    rm -f "$KG_DATA/.update-pending" "$KG_DATA/.writes-since-update" 2>/dev/null
 
     # Knowledge index loaded via @include in .claude/CLAUDE.md for Claude Code.
 
@@ -38,23 +41,28 @@ case "$CMD" in
     fi
 
     # Auto-update: trigger when active modules lack a knowledge node.
+    # Append the notice to CONTEXT — do NOT early-exit, otherwise the
+    # work snapshot loaded above is thrown away and the main session
+    # starts blind. Also exclude runtime/infra dirs (false positives).
     if [ -f "$EVENTS" ]; then
       PENDING=$(wc -l < "$EVENTS" 2>/dev/null | tr -d ' ' || echo 0)
 
-      # Check if any recently active directories are missing CLAUDE.md
       MISSING_NODES=0
       if [ "$PENDING" -ge 5 ]; then
         ACTIVE_DIRS=$(tail -200 "$EVENTS" | jq -r 'select(.e | startswith("w")) | .p' 2>/dev/null \
           | xargs -I{} dirname {} 2>/dev/null | sort -u | head -10)
         for d in $ACTIVE_DIRS; do
           [ "$d" = "." ] && continue
-          has_knowledge_node "$d" || MISSING_NODES=$((MISSING_NODES + 1))
+          [ "${d#.knowledge-graph}" != "$d" ] && continue
+          [ "${d#.claude}" != "$d" ] && continue
+          [ ! -d "$CLAUDE_PROJECT_DIR/$d" ] && continue
+          has_knowledge_node "$d" && continue
+          MISSING_NODES=$((MISSING_NODES + 1))
         done
       fi
 
       if [ "$MISSING_NODES" -gt 0 ]; then
-        emit_hook_context "$(json_escape "[kg auto-trigger] $MISSING_NODES active modules lack knowledge nodes. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update.")"
-        exit 0
+        CONTEXT="$CONTEXT\n[kg auto-trigger] $MISSING_NODES active modules lack knowledge nodes. Invoke Skill tool (skill: knowledge-graph) to auto-detect and run update."
       fi
     fi
 

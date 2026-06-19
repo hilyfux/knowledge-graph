@@ -45,7 +45,7 @@ cd knowledge-graph
 Then:
 
 1. Restart Claude Code so hooks activate, or connect your MCP-aware agent.
-2. For Codex, read the installed `AGENTS.md` notes and use the `knowledge-graph` MCP server from `.mcp.json`.
+2. For Codex CLI, use the project `.codex/config.toml` server entry; other MCP-aware agents can use `.mcp.json`. The installer does not create user-level MCP registrations.
 3. Run `/knowledge-graph init` in Claude Code, or use MCP tools such as `kg_status`, `kg_query`, and `kg_read_node` from Codex.
 
 From that point on: silent tracking in Claude Code, distributed knowledge nodes per module, and cross-session memory readable by Codex or any MCP-aware agent.
@@ -159,7 +159,11 @@ Each module directory gets a compact canonical `CLAUDE.md` node (≤20 lines, ma
 
 Plus **Resources**: every canonical `CLAUDE.md` / `SKILL.md` is exposed through `kg://node/<path>`, `kg://claude/<path>`, or `kg://skill/<path>`. The knowledge index is at `kg://index`; the work snapshot at `kg://snapshot`.
 
-Auto-registered in `.mcp.json` during installation.
+The MCP server also returns concise initialization instructions so Codex starts
+with `kg_status`, queries and reads canonical nodes before unfamiliar edits, and
+uses prediction/resume tools before spending context on broad file reads.
+
+Auto-registered in project `.codex/config.toml` for Codex CLI and project `.mcp.json` for other MCP-aware clients during installation, with `startup_timeout_sec = 60` and `tool_timeout_sec = 20` by default. The installer does not create user-level Codex MCP registrations; set `CODEX_MCP_STARTUP_TIMEOUT_SEC` or `CODEX_MCP_TOOL_TIMEOUT_SEC` before install to use different project-level timeouts.
 
 ---
 

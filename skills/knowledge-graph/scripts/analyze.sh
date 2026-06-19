@@ -1,15 +1,44 @@
 #!/bin/bash
 # analyze.sh — Stop hook + project scan + pre-analysis + quick-status
-# Usage: analyze.sh <stop|scan|analyze|quick-status>
+# Usage: analyze.sh <stop|scan|analyze|quick-status|lock|unlock|reset-trigger>
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/guard.sh"
 
 EVENTS="$KG_DATA/graph-events.jsonl"
 ANALYSIS="$KG_DATA/graph-analysis.json"
 SCAN="$KG_DATA/graph-scan.json"
+UPDATE_LOCK="$KG_DATA/.kg-updating"
+UPDATE_PENDING="$KG_DATA/.update-pending"
+WRITE_COUNTER="$KG_DATA/.writes-since-update"
 CMD="${1:-quick-status}"
 
 case "$CMD" in
+
+  lock)
+    # Skill body uses this instead of raw `$CLAUDE_PROJECT_DIR` to acquire the
+    # update lock — guard.sh has already resolved the project dir robustly.
+    touch "$UPDATE_LOCK" 2>/dev/null
+    echo "lock=$UPDATE_LOCK"
+    ;;
+
+  unlock)
+    # Cleanup at end of skill update: drop lock + the recurring-trigger markers
+    # so the next 15-write cycle starts fresh.
+    rm -f "$UPDATE_LOCK" "$UPDATE_PENDING" "$WRITE_COUNTER" 2>/dev/null
+    ;;
+
+  reset-trigger)
+    # Manual / programmatic reset (called by SessionStart, etc.)
+    rm -f "$UPDATE_PENDING" "$WRITE_COUNTER" 2>/dev/null
+    ;;
+
+  init-data)
+    # Skill init mode step 5 — relies on guard.sh's resolve_project_dir to
+    # avoid raw `$CLAUDE_PROJECT_DIR` failures in the skill body.
+    touch "$EVENTS" 2>/dev/null
+    date +%s > "$KG_DATA/.initialized" 2>/dev/null
+    echo "init-data ok: $KG_DATA"
+    ;;
 
   stop)
     # Stop hook: save working state + background analysis

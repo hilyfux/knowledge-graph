@@ -11,10 +11,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERSION="1.2.2"
 
 # ── Project-dir resolution ────────────────────────────────────────────────────
-# Priority: CLAUDE_PROJECT_DIR env > KG_PROJECT_DIR env > walk up from script
-# dir > $PWD (warn). Codex / non-Claude agents may not set
-# CLAUDE_PROJECT_DIR, so the fallback has to be reliable.
-PROJECT_DIR="${CLAUDE_PROJECT_DIR:-${KG_PROJECT_DIR:-}}"
+# Priority: KG_PROJECT_DIR env > CLAUDE_PROJECT_DIR env > walk up from script
+# dir > $PWD (warn). Codex/MCP project config sets KG_PROJECT_DIR; Claude Code
+# may set CLAUDE_PROJECT_DIR.
+PROJECT_DIR="${KG_PROJECT_DIR:-${CLAUDE_PROJECT_DIR:-}}"
 if [ -z "$PROJECT_DIR" ]; then
   d="$SCRIPT_DIR"
   while [ "$d" != "/" ]; do
@@ -34,12 +34,15 @@ EVENTS="$KG_DATA/graph-events.jsonl"
 ANALYSIS="$KG_DATA/graph-analysis.json"
 INDEX="$KG_DATA/knowledge-index.md"
 SNAPSHOT="$KG_DATA/work-snapshot.md"
+MCP_INSTRUCTIONS='Use kg_status first to check graph health. Before editing unfamiliar code, use kg_query to find rules, then kg_read_node for relevant CLAUDE.md/SKILL.md nodes. Use kg_predict before edits for related modules and kg_recent_work on resume. Treat .knowledge-graph/ as runtime data: read through tools/resources, do not commit it.'
+MCP_QUERY_MAX_LIMIT=20
 
 knowledge_node_path() {
   local module_path="$1" base
   if [ "$module_path" = "." ] || [ "$module_path" = "" ] || [ "$module_path" = "root" ]; then
     base="$PROJECT_DIR"
   else
+    is_safe_rel_path "$module_path" || return 1
     base="$PROJECT_DIR/$module_path"
   fi
   [ -f "$base/CLAUDE.md" ] && { printf '%s\n' "$base/CLAUDE.md"; return 0; }
@@ -47,10 +50,37 @@ knowledge_node_path() {
   return 1
 }
 
+is_safe_rel_path() {
+  local rel="$1" part
+  [ -n "$rel" ] || return 1
+  if [ "$rel" = "." ] || [ "$rel" = "root" ]; then
+    return 0
+  fi
+  case "$rel" in
+    /*) return 1 ;;
+  esac
+  local old_ifs="$IFS"
+  IFS='/'
+  for part in $rel; do
+    if [ "$part" = ".." ]; then
+      IFS="$old_ifs"
+      return 1
+    fi
+  done
+  IFS="$old_ifs"
+  return 0
+}
+
 find_knowledge_nodes() {
-  find "$PROJECT_DIR" \( -name "CLAUDE.md" -o -name "SKILL.md" \) \
-    -not -path "*/.git/*" -not -path "*/node_modules/*" \
-    -not -path "*/.knowledge-graph/*" 2>/dev/null
+  find "$PROJECT_DIR" \
+    \( -type d \( \
+      -name ".git" -o -name ".hg" -o -name ".svn" -o \
+      -name ".claude" -o -name ".knowledge-graph" -o \
+      -name ".worktrees" -o -name ".cache" -o -name ".next" -o \
+      -name "node_modules" -o -name "vendor" -o \
+      -name "dist" -o -name "build" -o -name "coverage" \
+    \) -prune \) -o \
+    \( -type f \( -name "CLAUDE.md" -o -name "SKILL.md" \) -print \) 2>/dev/null
 }
 
 # ── JSON-RPC helpers ──────────────────────────────────────────────────────────
@@ -85,12 +115,13 @@ err_not_initialized(){ send_error "$1" -32103 "Knowledge graph not initialized. 
 # kg://index             → .knowledge-graph/knowledge-index.md
 # kg://snapshot          → .knowledge-graph/work-snapshot.md
 uri_to_path() {
+  local rel
   case "$1" in
     kg://node/root)    knowledge_node_path "root" || true ;;
-    kg://node/*)       knowledge_node_path "${1#kg://node/}" || true ;;
+    kg://node/*)       rel="${1#kg://node/}"; is_safe_rel_path "$rel" && knowledge_node_path "$rel" || true ;;
     kg://claude/root)  echo "$PROJECT_DIR/CLAUDE.md" ;;
-    kg://claude/*)     echo "$PROJECT_DIR/${1#kg://claude/}/CLAUDE.md" ;;
-    kg://skill/*)      echo "$PROJECT_DIR/${1#kg://skill/}/SKILL.md" ;;
+    kg://claude/*)     rel="${1#kg://claude/}"; if is_safe_rel_path "$rel"; then echo "$PROJECT_DIR/$rel/CLAUDE.md"; fi ;;
+    kg://skill/*)      rel="${1#kg://skill/}"; if is_safe_rel_path "$rel"; then echo "$PROJECT_DIR/$rel/SKILL.md"; fi ;;
     kg://index)        echo "$INDEX" ;;
     kg://snapshot)     echo "$SNAPSHOT" ;;
     *)                 echo "" ;;
@@ -106,7 +137,8 @@ handle_initialize() {
       \"tools\":{\"listChanged\":false},
       \"resources\":{\"subscribe\":false,\"listChanged\":false}
     },
-    \"serverInfo\":{\"name\":\"knowledge-graph\",\"version\":\"$VERSION\"}
+    \"serverInfo\":{\"name\":\"knowledge-graph\",\"version\":\"$VERSION\"},
+    \"instructions\":$(jq -Rn --arg v "$MCP_INSTRUCTIONS" '$v')
   }"
 }
 
@@ -122,7 +154,7 @@ handle_tools_list() {
       {
         "name":"kg_query",
         "description":"Full-text search across canonical knowledge nodes (CLAUDE.md and SKILL.md bodies, not just the tag index). Returns ranked matches with file paths and snippet excerpts. Use this to find prohibitions, conventions, or references for a topic.",
-        "inputSchema":{"type":"object","properties":{"question":{"type":"string","description":"Search query (keywords or short phrase)"},"limit":{"type":"integer","description":"Max results to return (default 8)","default":8}},"required":["question"]}
+        "inputSchema":{"type":"object","properties":{"question":{"type":"string","description":"Literal search text (keywords or short phrase)"},"limit":{"type":"integer","description":"Max results to return (default 8, max 20)","default":8,"minimum":1,"maximum":20}},"required":["question"]}
       },
       {
         "name":"kg_read_node",
@@ -253,6 +285,8 @@ tool_kg_query() {
 
   if [ -z "$question" ]; then err_empty_arg "$id" "question"; return; fi
   case "$limit" in ''|*[!0-9]*) limit=8 ;; esac
+  [ "$limit" -lt 1 ] && limit=8
+  [ "$limit" -gt "$MCP_QUERY_MAX_LIMIT" ] && limit="$MCP_QUERY_MAX_LIMIT"
 
   # Search all canonical CLAUDE.md / SKILL.md bodies, not just the index.
   # Locally disable pipefail: head -n closes the pipe early, which SIGPIPEs
@@ -265,7 +299,7 @@ tool_kg_query() {
     while IFS= read -r f; do
       local rel
       rel="${f#$PROJECT_DIR/}"
-      grep -in --color=never -- "$question" "$f" 2>/dev/null | head -3 | \
+      grep -Fin --color=never -- "$question" "$f" 2>/dev/null | head -3 | \
         while IFS=: read -r lineno excerpt; do
           printf "%s\t%s\t%s\n" "$rel" "$lineno" "$excerpt"
         done
@@ -288,6 +322,10 @@ tool_kg_read_node() {
   local module_path
   module_path=$(echo "$args" | jq -r '.module_path // ""')
   if [ -z "$module_path" ]; then err_empty_arg "$id" "module_path"; return; fi
+  if ! is_safe_rel_path "$module_path"; then
+    send_error "$id" -32602 "Invalid module_path: path must stay within project root"
+    return
+  fi
 
   local path="" which=""
   path=$(knowledge_node_path "$module_path" 2>/dev/null || true)
@@ -379,9 +417,31 @@ handle_tool_call() {
 while IFS= read -r line; do
   [ -z "$line" ] && continue
 
-  PARSED=$(echo "$line" | jq -r '[.method // "", (.id // "null" | tostring)] | join("\t")' 2>/dev/null)
-  method=$(printf '%s' "$PARSED" | cut -f1)
-  id=$(printf '%s' "$PARSED" | cut -f2)
+  if ! echo "$line" | jq -e . >/dev/null 2>&1; then
+    send_error "null" -32700 "Parse error"
+    continue
+  fi
+  if ! echo "$line" | jq -e 'type == "object"' >/dev/null 2>&1; then
+    send_error "null" -32600 "Invalid Request"
+    continue
+  fi
+
+  rpc_meta=$(echo "$line" | jq -r '[
+    (has("id") | tostring),
+    (if has("id") then (.id | tojson) else "null" end),
+    (if (.method | type) == "string" then .method else "" end),
+    ((.jsonrpc == "2.0" and (.method | type) == "string" and (.method | length > 0)) | tostring)
+  ] | @tsv' 2>/dev/null || printf 'false\tnull\t\tfalse')
+  IFS="$(printf '\t')" read -r has_id id method valid_request <<EOF
+$rpc_meta
+EOF
+  if [ "$valid_request" != "true" ]; then
+    send_error "$id" -32600 "Invalid Request"
+    continue
+  fi
+  if [ "$has_id" != "true" ] && [ -n "$method" ]; then
+    continue
+  fi
 
   case "$method" in
     initialize)
@@ -393,6 +453,10 @@ while IFS= read -r line; do
       handle_tools_list "$id"
       ;;
     tools/call)
+      if ! echo "$line" | jq -e '(.params | type == "object") and (.params.name | type == "string" and length > 0) and ((.params | has("arguments") | not) or (.params.arguments | type == "object"))' >/dev/null 2>&1; then
+        send_error "$id" -32602 "Invalid params: tools/call requires object params with string name and object arguments"
+        continue
+      fi
       tool_name=$(echo "$line" | jq -r '.params.name // ""')
       tool_args=$(echo "$line" | jq -c '.params.arguments // {}')
       handle_tool_call "$id" "$tool_name" "$tool_args"
@@ -401,6 +465,10 @@ while IFS= read -r line; do
       handle_resources_list "$id"
       ;;
     resources/read)
+      if ! echo "$line" | jq -e '(.params | type == "object") and (.params.uri | type == "string" and length > 0)' >/dev/null 2>&1; then
+        send_error "$id" -32602 "Invalid params: resources/read requires object params with string uri"
+        continue
+      fi
       uri=$(echo "$line" | jq -r '.params.uri // ""')
       handle_resources_read "$id" "$uri"
       ;;
